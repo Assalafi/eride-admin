@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\User;
 use App\Models\Branch;
+use App\Models\Wallet;
 use App\Services\BranchAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
