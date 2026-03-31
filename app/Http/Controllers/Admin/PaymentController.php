@@ -885,18 +885,22 @@ $baseQuery = Transaction::with(['driver', 'approver'])
     private function getDateFilterDescription($timeFilter, $startDate = null, $endDate = null)
     {
         switch ($timeFilter) {
-            case 'today':
-                return 'Today';
-            case 'yesterday':
-                return 'Yesterday';
-            case 'this_week':
-                return 'This Week';
+            case 'daily':
+                return 'Today (' . now()->format('M d, Y') . ')';
+            case 'weekly':
+                return 'This Week (' . now()->startOfWeek()->format('M d') . ' - ' . now()->endOfWeek()->format('M d, Y') . ')';
+            case 'monthly':
+                return now()->format('F Y');
+            case 'yearly':
+                return now()->format('Y');
             case 'last_week':
-                return 'Last Week';
-            case 'this_month':
-                return 'This Month';
+                return 'Last Week (' . now()->subWeek()->startOfWeek()->format('M d') . ' - ' . now()->subWeek()->endOfWeek()->format('M d, Y') . ')';
             case 'last_month':
-                return 'Last Month';
+                return now()->subMonth()->format('F Y');
+            case 'last_year':
+                return now()->subYear()->format('Y');
+            case 'all':
+                return 'All Time';
             case 'custom':
                 if ($startDate && $endDate) {
                     return date('M d, Y', strtotime($startDate)) . ' - ' . date('M d, Y', strtotime($endDate));

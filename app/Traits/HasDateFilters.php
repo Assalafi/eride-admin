@@ -29,6 +29,18 @@ trait HasDateFilters
             case 'yearly':
                 return [Carbon::now()->startOfYear(), Carbon::now()->endOfYear()];
             
+            case 'last_week':
+                return [Carbon::now()->subWeek()->startOfWeek(), Carbon::now()->subWeek()->endOfWeek()];
+            
+            case 'last_month':
+                return [Carbon::now()->subMonth()->startOfMonth(), Carbon::now()->subMonth()->endOfMonth()];
+            
+            case 'last_year':
+                return [Carbon::now()->subYear()->startOfYear(), Carbon::now()->subYear()->endOfYear()];
+            
+            case 'all':
+                return [null, null];
+            
             case 'custom':
                 if ($startDate && $endDate) {
                     return [Carbon::parse($startDate), Carbon::parse($endDate)];
@@ -52,6 +64,10 @@ trait HasDateFilters
             'weekly' => 'This Week',
             'monthly' => 'This Month',
             'yearly' => 'This Year',
+            'last_week' => 'Last Week',
+            'last_month' => 'Last Month',
+            'last_year' => 'Last Year',
+            'all' => 'All Time',
             'custom' => 'Custom Range',
         ];
     }
@@ -78,6 +94,18 @@ trait HasDateFilters
             
             case 'yearly':
                 return Carbon::now()->format('Y');
+            
+            case 'last_week':
+                return 'Last Week (' . Carbon::now()->subWeek()->startOfWeek()->format('M d') . ' - ' . Carbon::now()->subWeek()->endOfWeek()->format('M d, Y') . ')';
+            
+            case 'last_month':
+                return Carbon::now()->subMonth()->format('F Y');
+            
+            case 'last_year':
+                return Carbon::now()->subYear()->format('Y');
+            
+            case 'all':
+                return 'All Time';
             
             case 'custom':
                 if ($start && $end) {

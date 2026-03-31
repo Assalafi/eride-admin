@@ -44,6 +44,10 @@
                             <option value="weekly" {{ $timeFilter == 'weekly' ? 'selected' : '' }}>This Week</option>
                             <option value="monthly" {{ $timeFilter == 'monthly' ? 'selected' : '' }}>This Month</option>
                             <option value="yearly" {{ $timeFilter == 'yearly' ? 'selected' : '' }}>This Year</option>
+                            <option value="last_week" {{ $timeFilter == 'last_week' ? 'selected' : '' }}>Last Week</option>
+                            <option value="last_month" {{ $timeFilter == 'last_month' ? 'selected' : '' }}>Last Month</option>
+                            <option value="last_year" {{ $timeFilter == 'last_year' ? 'selected' : '' }}>Last Year</option>
+                            <option value="all" {{ $timeFilter == 'all' ? 'selected' : '' }}>All Time</option>
                             <option value="custom" {{ $timeFilter == 'custom' ? 'selected' : '' }}>Custom Range</option>
                         </select>
                     </div>
