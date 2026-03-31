@@ -1417,7 +1417,7 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             
             // Add CSV header for transactions
             fputcsv($file, [
-                'ID',
+                'SN',
                 'Date',
                 'Driver Name',
                 'Driver Phone',
@@ -1431,9 +1431,10 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             ]);
             
             // Add data rows
+            $serialNumber = 1;
             foreach ($transactions as $transaction) {
                 fputcsv($file, [
-                    $transaction->id,
+                    $serialNumber++, // Serial Number instead of ID
                     $transaction->created_at->format('Y-m-d H:i:s'),
                     $transaction->driver->full_name ?? 'N/A',
                     $transaction->driver->phone_number ?? 'N/A',
