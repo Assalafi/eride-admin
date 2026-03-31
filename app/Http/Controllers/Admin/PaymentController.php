@@ -706,6 +706,18 @@ $baseQuery = Transaction::with(['driver', 'approver'])
         
         $user = auth()->user();
         
+        // Debug: Log all request parameters
+        \Log::info('PDF Generation Parameters', [
+            'all_params' => $request->all(),
+            'time_filter' => $request->get('time_filter'),
+            'start_date' => $request->get('start_date'),
+            'end_date' => $request->get('end_date'),
+            'status' => $request->get('status'),
+            'type' => $request->get('type'),
+            'driver_id' => $request->get('driver_id'),
+            'branch_id' => $request->get('branch_id'),
+        ]);
+        
         // Get the EXACT same filter parameters as index method
         $timeFilter = $request->get('time_filter', 'monthly');
         $startDate = $request->get('start_date');
@@ -719,6 +731,13 @@ $baseQuery = Transaction::with(['driver', 'approver'])
 
         // Get date range
         [$start, $end] = $this->getDateRange($timeFilter, $startDate, $endDate);
+        
+        // Debug: Log the calculated date range
+        \Log::info('PDF Date Range', [
+            'timeFilter' => $timeFilter,
+            'start' => $start,
+            'end' => $end,
+        ]);
 
         // Build the EXACT same base query as index method
         $baseQuery = Transaction::with(['driver', 'approver'])
@@ -810,6 +829,12 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             // Limit to 1000 records to prevent memory issues
             $transactions = $baseQuery->latest()->limit(1000)->get();
         }
+        
+        // Debug: Log the number of transactions fetched
+        \Log::info('PDF Transactions Count', [
+            'count' => $transactions->count(),
+            'type' => $type ?? 'null',
+        ]);
         
         // Calculate summary statistics
         $summary = [
