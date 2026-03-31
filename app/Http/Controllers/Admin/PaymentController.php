@@ -850,8 +850,8 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             $branch = \App\Models\Branch::find($request->branch_id);
             $filterDescription[] = 'Branch: ' . ($branch ? $branch->name : 'Unknown');
         }
-        if ($request->filled('timeFilter') && $request->timeFilter !== 'all') {
-            $filterDescription[] = 'Period: ' . $this->getDateFilterDescription($request->timeFilter, $request->startDate, $request->endDate);
+        if ($request->filled('time_filter') && $request->time_filter !== 'all') {
+            $filterDescription[] = 'Period: ' . $this->getDateFilterDescription($request->time_filter, $request->start_date, $request->end_date);
         }
         
         // Add note if records were limited
