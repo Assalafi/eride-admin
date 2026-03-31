@@ -807,8 +807,10 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 ];
             });
         } else {
-            // Get regular transactions
-            $regularTransactions = $baseQuery->latest()->limit(1000)->get();
+            // Get regular transactions (exclude credit transactions)
+            $regularTransactions = $baseQuery->latest()
+                ->where('type', '!=', 'credit')
+                ->limit(1000)->get();
             
             // Also get charging requests when no type filter is specified
             $chargingRequestsQuery = \App\Models\ChargingRequest::with(['driver'])
