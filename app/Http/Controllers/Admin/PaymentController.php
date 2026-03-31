@@ -700,6 +700,10 @@ $baseQuery = Transaction::with(['driver', 'approver'])
 
     public function generatePdf(Request $request)
     {
+        // Increase memory limit and execution time for large datasets
+        ini_set('memory_limit', '512M');
+        set_time_limit(300);
+        
         $user = auth()->user();
         
         // Get the EXACT same filter parameters as index method
@@ -803,7 +807,8 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 ];
             });
         } else {
-            $transactions = $baseQuery->latest()->get();
+            // Limit to 1000 records to prevent memory issues
+            $transactions = $baseQuery->latest()->limit(1000)->get();
         }
         
         // Calculate summary statistics
@@ -849,11 +854,18 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             $filterDescription[] = 'Period: ' . $this->getDateFilterDescription($request->timeFilter, $request->startDate, $request->endDate);
         }
         
+        // Add note if records were limited
+        $recordLimitNote = null;
+        if ($transactions->count() >= 1000) {
+            $recordLimitNote = 'Note: Showing first 1000 records only. Use specific filters for smaller datasets.';
+        }
+        
         $data = [
             'transactions' => $transactions,
             'summary' => $summary,
             'typeBreakdown' => $typeBreakdown,
             'filterDescription' => $filterDescription,
+            'recordLimitNote' => $recordLimitNote,
             'user' => $user,
             'generatedAt' => now()->format('M d, Y H:i'),
         ];
