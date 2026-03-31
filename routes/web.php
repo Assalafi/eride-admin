@@ -87,6 +87,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('admin/payments/drivers-without-remittance', [PaymentController::class, 'getDriversWithoutRemittance'])->name('admin.payments.drivers-without-remittance');
         });
         Route::get('admin/payments/pdf', [PaymentController::class, 'generatePdf'])->name('admin.payments.pdf');
+        Route::get('admin/payments/excel', [PaymentController::class, 'generateExcel'])->name('admin.payments.excel');
     });
     
     // Hire Purchase Management

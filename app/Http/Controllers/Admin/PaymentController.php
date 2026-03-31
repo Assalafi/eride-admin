@@ -1089,6 +1089,245 @@ $baseQuery = Transaction::with(['driver', 'approver'])
         return $pdf->stream($filename);
     }
 
+    public function generateExcel(Request $request)
+    {
+        // Increase memory limit and execution time for large datasets
+        ini_set('memory_limit', '1G');
+        set_time_limit(600);
+        
+        $user = auth()->user();
+        
+        // Get the EXACT same filter parameters as index method
+        $timeFilter = $request->get('time_filter', 'monthly');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $status = $request->get('status');
+        $type = $request->get('type');
+        $driverId = $request->get('driver_id');
+        $chargingStatus = $request->get('charging_status');
+        $branchId = $request->get('branch_id');
+        $reference = $request->get('reference');
+
+        // Get date range
+        [$start, $end] = $this->getDateRange($timeFilter, $startDate, $endDate);
+
+        // Build the EXACT same base query as index method
+        $baseQuery = Transaction::with(['driver', 'approver'])
+            ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                // Super Admin can filter by branch
+                if ($branchId) {
+                    $query->whereHas('driver', function ($q) use ($branchId) {
+                        $q->where('branch_id', $branchId);
+                    });
+                }
+            }, function ($query) use ($user) {
+                BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+            })
+            ->when($start && $end, function ($query) use ($start, $end) {
+                $query->whereBetween('created_at', [$start, $end]);
+            })
+            ->when($status, function ($query) use ($status) {
+                $query->where('status', $status);
+            })
+            ->when($driverId, function ($query) use ($driverId) {
+                $query->where('driver_id', $driverId);
+            })
+            ->when($type && $type !== 'charging_payment', function ($query) use ($type) {
+                $query->where('type', $type);
+            })
+            ->when($reference, function ($query) use ($reference) {
+                $query->where('reference', 'like', $reference . '%');
+            });
+
+        // Handle charging payment type EXACTLY like index method
+        if ($type === 'charging_payment' || ($reference && substr($reference, 0, 6) === 'CHARGE')) {
+            // Get charging requests and convert them to transaction-like objects
+            $chargingRequestsQuery = \App\Models\ChargingRequest::with(['driver'])
+                ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                    // Super Admin can filter by branch
+                    if ($branchId) {
+                        $query->whereHas('driver', function ($q) use ($branchId) {
+                            $q->where('branch_id', $branchId);
+                        });
+                    }
+                }, function ($query) use ($user) {
+                    BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+                })
+                ->when($start && $end, function ($query) use ($start, $end) {
+                    $query->whereBetween('created_at', [$start, $end]);
+                })
+                ->when($driverId, function ($query) use ($driverId) {
+                    $query->where('driver_id', $driverId);
+                })
+                ->when($status, function ($query) use ($status) {
+                    // Map transaction status to charging status
+                    if ($status === 'successful') {
+                        $query->whereIn('status', ['approved', 'completed']);
+                    } elseif ($status === 'pending') {
+                        $query->where('status', 'pending');
+                    } elseif ($status === 'rejected') {
+                        $query->where('status', 'cancelled');
+                    }
+                })
+                ->when($chargingStatus, function ($query) use ($chargingStatus) {
+                    $query->where('status', $chargingStatus);
+                })
+                ->latest();
+                
+            $chargingRequests = $chargingRequestsQuery->get();
+            
+            // Transform charging requests to look like transactions for the view
+            $transactions = $chargingRequests->map(function ($request) {
+                return (object) [
+                    'id' => $request->id,
+                    'driver' => (object) [
+                        'full_name' => $request->driver->full_name ?? 'Unknown Driver',
+                        'phone_number' => $request->driver->phone_number ?? 'N/A',
+                        'branch' => (object) [
+                            'name' => $request->driver->branch->name ?? 'N/A'
+                        ]
+                    ],
+                    'type' => 'charging_payment',
+                    'amount' => $request->charging_cost ?? 0,
+                    'status' => $request->status === 'approved' || $request->status === 'completed' ? 'successful' : 
+                              ($request->status === 'pending' ? 'pending' : 'rejected'),
+                    'payment_proof' => $request->payment_receipt,
+                    'created_at' => $request->created_at,
+                    'approver' => $request->approvedBy,
+                    'description' => null,
+                ];
+            });
+        } else {
+            // Get regular transactions
+            $regularTransactions = $baseQuery->latest()->get();
+            
+            // Also get charging requests when no type filter is specified
+            $chargingRequestsQuery = \App\Models\ChargingRequest::with(['driver'])
+                ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                    // Super Admin can filter by branch
+                    if ($branchId) {
+                        $query->whereHas('driver', function ($q) use ($branchId) {
+                            $q->where('branch_id', $branchId);
+                        });
+                    }
+                }, function ($query) use ($user) {
+                    BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+                })
+                ->when($start && $end, function ($query) use ($start, $end) {
+                    $query->whereBetween('created_at', [$start, $end]);
+                })
+                ->when($driverId, function ($query) use ($driverId) {
+                    $query->where('driver_id', $driverId);
+                })
+                ->when($status, function ($query) use ($status) {
+                    // Map transaction status to charging status
+                    if ($status === 'successful') {
+                        $query->whereIn('status', ['approved', 'completed']);
+                    } elseif ($status === 'pending') {
+                        $query->where('status', 'pending');
+                    } elseif ($status === 'rejected') {
+                        $query->where('status', 'cancelled');
+                    }
+                })
+                ->when($chargingStatus, function ($query) use ($chargingStatus) {
+                    $query->where('status', $chargingStatus);
+                })
+                ->latest();
+                
+            $chargingRequests = $chargingRequestsQuery->get();
+            
+            // Transform charging requests to look like transactions
+            $chargingTransactions = $chargingRequests->map(function ($request) {
+                return (object) [
+                    'id' => $request->id,
+                    'driver' => (object) [
+                        'full_name' => $request->driver->full_name ?? 'Unknown Driver',
+                        'phone_number' => $request->driver->phone_number ?? 'N/A',
+                        'branch' => (object) [
+                            'name' => $request->driver->branch->name ?? 'N/A'
+                        ]
+                    ],
+                    'type' => 'charging_payment',
+                    'amount' => $request->charging_cost ?? 0,
+                    'status' => $request->status === 'approved' || $request->status === 'completed' ? 'successful' : 
+                              ($request->status === 'pending' ? 'pending' : 'rejected'),
+                    'payment_proof' => $request->payment_receipt,
+                    'created_at' => $request->created_at,
+                    'approver' => $request->approvedBy,
+                    'description' => null,
+                ];
+            });
+            
+            // Combine regular transactions and charging transactions
+            $allTransactions = $regularTransactions->concat($chargingTransactions);
+            
+            // Sort by created_at date
+            $transactions = $allTransactions->sortByDesc('created_at')->values();
+        }
+
+        // Create CSV file
+        $filename = 'payments_report_' . now()->format('Y-m-d_H-i-s') . '.csv';
+        
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $callback = function() use ($transactions) {
+            $file = fopen('php://output', 'w');
+            
+            // Add CSV header
+            fputcsv($file, [
+                'ID',
+                'Date',
+                'Driver Name',
+                'Driver Phone',
+                'Branch',
+                'Type',
+                'Amount',
+                'Status',
+                'Reference',
+                'Description',
+                'Approver'
+            ]);
+            
+            // Add data rows
+            foreach ($transactions as $transaction) {
+                fputcsv($file, [
+                    $transaction->id,
+                    $transaction->created_at->format('Y-m-d H:i:s'),
+                    $transaction->driver->full_name ?? 'N/A',
+                    $transaction->driver->phone_number ?? 'N/A',
+                    $transaction->driver->branch->name ?? 'N/A',
+                    $this->getTransactionTypeLabel($transaction->type),
+                    number_format($transaction->amount, 2),
+                    ucfirst($transaction->status),
+                    $transaction->reference ?? 'N/A',
+                    $transaction->description ?? 'N/A',
+                    $transaction->approver->name ?? 'N/A'
+                ]);
+            }
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    private function getTransactionTypeLabel($type)
+    {
+        $labels = [
+            'daily_remittance' => 'Daily Remittance',
+            'charging_payment' => 'Charging Payment',
+            'maintenance_debit' => 'Maintenance',
+            'wallet_funding' => 'Wallet Funding',
+            'hire_purchase_payment' => 'Hire Purchase',
+            'credit' => 'Credit',
+        ];
+        
+        return $labels[$type] ?? str_replace('_', ' ', ucfirst($type));
+    }
+
     private function getDateFilterDescription($timeFilter, $startDate = null, $endDate = null)
     {
         switch ($timeFilter) {

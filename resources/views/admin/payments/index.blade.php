@@ -11,6 +11,10 @@
         <h3 class="mb-0">Payments Management</h3>
 
         <div class="d-flex gap-2">
+            <a href="{{ route('admin.payments.excel', request()->query()) }}" class="btn btn-success"
+                title="Export to Excel">
+                <i class="ri-file-excel-line me-1"></i>Export Excel
+            </a>
             <a href="{{ route('admin.payments.pdf', request()->query()) }}" class="btn btn-primary"
                 title="Generate PDF Report">
                 <i class="ri-file-pdf-line me-1"></i>Export PDF
