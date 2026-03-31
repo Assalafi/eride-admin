@@ -706,18 +706,6 @@ $baseQuery = Transaction::with(['driver', 'approver'])
         
         $user = auth()->user();
         
-        // Debug: Log all request parameters
-        \Log::info('PDF Generation Parameters', [
-            'all_params' => $request->all(),
-            'time_filter' => $request->get('time_filter'),
-            'start_date' => $request->get('start_date'),
-            'end_date' => $request->get('end_date'),
-            'status' => $request->get('status'),
-            'type' => $request->get('type'),
-            'driver_id' => $request->get('driver_id'),
-            'branch_id' => $request->get('branch_id'),
-        ]);
-        
         // Get the EXACT same filter parameters as index method
         $timeFilter = $request->get('time_filter', 'monthly');
         $startDate = $request->get('start_date');
@@ -731,13 +719,6 @@ $baseQuery = Transaction::with(['driver', 'approver'])
 
         // Get date range
         [$start, $end] = $this->getDateRange($timeFilter, $startDate, $endDate);
-        
-        // Debug: Log the calculated date range
-        \Log::info('PDF Date Range', [
-            'timeFilter' => $timeFilter,
-            'start' => $start,
-            'end' => $end,
-        ]);
 
         // Build the EXACT same base query as index method
         $baseQuery = Transaction::with(['driver', 'approver'])
@@ -830,16 +811,134 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             $transactions = $baseQuery->latest()->limit(1000)->get();
         }
         
-        // Debug: Log the number of transactions fetched
-        \Log::info('PDF Transactions Count', [
-            'count' => $transactions->count(),
-            'type' => $type ?? 'null',
-        ]);
+        // Calculate summary statistics - same logic as index method
+        $incomeSummary = [
+            'daily_remittance' => 0,
+            'charging' => 0,
+            'maintenance' => 0,
+            'total' => 0
+        ];
+
+        // Always calculate summaries - show only selected type value when filtering
+        $summaryQuery = clone $baseQuery;
         
-        // Calculate summary statistics
+        if (!$type) {
+            // No type filter - show all values
+            // Daily Remittance from transactions
+            $incomeSummary['daily_remittance'] = $summaryQuery->clone()
+                ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
+                ->where('status', 'successful')
+                ->sum('amount');
+                
+            // Charging from charging requests (not transactions)
+            $chargingQuery = \App\Models\ChargingRequest::with(['driver'])
+                ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                    // Super Admin can filter by branch
+                    if ($branchId) {
+                        $query->whereHas('driver', function ($q) use ($branchId) {
+                            $q->where('branch_id', $branchId);
+                        });
+                    }
+                }, function ($query) use ($user) {
+                    BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+                })
+                ->when($start && $end, function ($query) use ($start, $end) {
+                    $query->whereBetween('created_at', [$start, $end]);
+                })
+                ->when($driverId, function ($query) use ($driverId) {
+                    $query->where('driver_id', $driverId);
+                })
+                ->when($chargingStatus, function ($query) use ($chargingStatus) {
+                    $query->where('status', $chargingStatus);
+                })
+                ->when($status, function ($query) use ($status) {
+                    // Map transaction status to charging status
+                    if ($status === 'successful') {
+                        $query->whereIn('status', ['approved', 'completed']);
+                    } elseif ($status === 'pending') {
+                        $query->where('status', 'pending');
+                    } elseif ($status === 'rejected') {
+                        $query->where('status', 'cancelled');
+                    }
+                })
+                ->whereIn('status', ['approved', 'completed']);
+                
+            $incomeSummary['charging'] = $chargingQuery->sum('charging_cost');
+                
+            // Maintenance from transactions
+            $incomeSummary['maintenance'] = $summaryQuery->clone()
+                ->where('type', Transaction::TYPE_MAINTENANCE_DEBIT)
+                ->where('status', 'successful')
+                ->sum('amount');
+                
+            $incomeSummary['total'] = $incomeSummary['daily_remittance'] + $incomeSummary['charging'] + $incomeSummary['maintenance'];
+        } else {
+            // Type filter selected - show only that type's value
+            if ($type === 'daily_remittance') {
+                $incomeSummary['daily_remittance'] = $summaryQuery->clone()
+                    ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
+                    ->where('status', 'successful')
+                    ->sum('amount');
+                $incomeSummary['charging'] = 0;
+                $incomeSummary['maintenance'] = 0;
+                $incomeSummary['total'] = $incomeSummary['daily_remittance'];
+            } elseif ($type === 'charging_payment') {
+                $chargingQuery = \App\Models\ChargingRequest::with(['driver'])
+                    ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                        // Super Admin can filter by branch
+                        if ($branchId) {
+                            $query->whereHas('driver', function ($q) use ($branchId) {
+                                $q->where('branch_id', $branchId);
+                            });
+                        }
+                    }, function ($query) use ($user) {
+                        BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+                    })
+                    ->when($start && $end, function ($query) use ($start, $end) {
+                        $query->whereBetween('created_at', [$start, $end]);
+                    })
+                    ->when($driverId, function ($query) use ($driverId) {
+                        $query->where('driver_id', $driverId);
+                    })
+                    ->when($chargingStatus, function ($query) use ($chargingStatus) {
+                        $query->where('status', $chargingStatus);
+                    })
+                    ->when($status, function ($query) use ($status) {
+                        // Map transaction status to charging status
+                        if ($status === 'successful') {
+                            $query->whereIn('status', ['approved', 'completed']);
+                        } elseif ($status === 'pending') {
+                            $query->where('status', 'pending');
+                        } elseif ($status === 'rejected') {
+                            $query->where('status', 'cancelled');
+                        }
+                    })
+                    ->whereIn('status', ['approved', 'completed']);
+                    
+                $incomeSummary['charging'] = $chargingQuery->sum('charging_cost');
+                $incomeSummary['daily_remittance'] = 0;
+                $incomeSummary['maintenance'] = 0;
+                $incomeSummary['total'] = $incomeSummary['charging'];
+            } elseif ($type === 'maintenance_debit') {
+                $incomeSummary['maintenance'] = $summaryQuery->clone()
+                    ->where('type', Transaction::TYPE_MAINTENANCE_DEBIT)
+                    ->where('status', 'successful')
+                    ->sum('amount');
+                $incomeSummary['daily_remittance'] = 0;
+                $incomeSummary['charging'] = 0;
+                $incomeSummary['total'] = $incomeSummary['maintenance'];
+            } elseif ($type === 'wallet_funding') {
+                $incomeSummary['daily_remittance'] = 0;
+                $incomeSummary['charging'] = 0;
+                $incomeSummary['maintenance'] = 0;
+                $incomeSummary['total'] = 0; // Wallet funding not part of income calculation
+            }
+        }
+
+        // Calculate summary statistics for display
         $summary = [
             'total_transactions' => $transactions->count(),
-            'total_amount' => $transactions->sum('amount'),
+            'total_amount' => $incomeSummary['total'], // Use income total, not all transactions sum
             'pending_count' => $transactions->where('status', 'pending')->count(),
             'pending_amount' => $transactions->where('status', 'pending')->sum('amount'),
             'successful_count' => $transactions->where('status', 'successful')->count(),
@@ -888,6 +987,7 @@ $baseQuery = Transaction::with(['driver', 'approver'])
         $data = [
             'transactions' => $transactions,
             'summary' => $summary,
+            'incomeSummary' => $incomeSummary,
             'typeBreakdown' => $typeBreakdown,
             'filterDescription' => $filterDescription,
             'recordLimitNote' => $recordLimitNote,
