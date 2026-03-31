@@ -11,6 +11,7 @@ use App\Models\HirePurchasePayment;
 use App\Models\Payment;
 use App\Models\SystemSetting;
 use App\Models\Transaction;
+use App\Models\Branch;
 use App\Traits\HasDateFilters;
 use App\Services\BranchAccessService;
 use Illuminate\Http\Request;
