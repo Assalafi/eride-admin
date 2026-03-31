@@ -1265,6 +1265,119 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             $transactions = $allTransactions->sortByDesc('created_at')->values();
         }
 
+        // Calculate summary statistics for Excel
+        $incomeSummary = [
+            'daily_remittance' => 0,
+            'charging' => 0,
+            'maintenance' => 0,
+            'total' => 0
+        ];
+
+        // Always calculate summaries - show only selected type value when filtering
+        $summaryQuery = clone $baseQuery;
+        
+        if (!$type) {
+            // No type filter - show all values
+            // Daily Remittance from transactions
+            $incomeSummary['daily_remittance'] = $summaryQuery->clone()
+                ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
+                ->where('status', 'successful')
+                ->sum('amount');
+                
+            // Charging from charging requests (not transactions)
+            $chargingQuery = \App\Models\ChargingRequest::with(['driver'])
+                ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                    // Super Admin can filter by branch
+                    if ($branchId) {
+                        $query->whereHas('driver', function ($q) use ($branchId) {
+                            $q->where('branch_id', $branchId);
+                        });
+                    }
+                }, function ($query) use ($user) {
+                    BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+                })
+                ->when($start && $end, function ($query) use ($start, $end) {
+                    $query->whereBetween('created_at', [$start, $end]);
+                })
+                ->when($driverId, function ($query) use ($driverId) {
+                    $query->where('driver_id', $driverId);
+                })
+                ->when($chargingStatus, function ($query) use ($chargingStatus) {
+                    $query->where('status', $chargingStatus);
+                })
+                ->when($status, function ($query) use ($status) {
+                    // Map transaction status to charging status
+                    if ($status === 'successful') {
+                        $query->whereIn('status', ['approved', 'completed']);
+                    } elseif ($status === 'pending') {
+                        $query->where('status', 'pending');
+                    } elseif ($status === 'rejected') {
+                        $query->where('status', 'cancelled');
+                    }
+                })
+                ->whereIn('status', ['approved', 'completed']);
+                
+            $incomeSummary['charging'] = $chargingQuery->sum('charging_cost');
+                
+            // Maintenance from transactions
+            $incomeSummary['maintenance'] = $summaryQuery->clone()
+                ->where('type', Transaction::TYPE_MAINTENANCE_DEBIT)
+                ->where('status', 'successful')
+                ->sum('amount');
+                
+            $incomeSummary['total'] = $incomeSummary['daily_remittance'] + $incomeSummary['charging'] + $incomeSummary['maintenance'];
+        } else {
+            // Type filter selected - show only that type's value
+            if ($type === 'daily_remittance') {
+                $incomeSummary['daily_remittance'] = $summaryQuery->clone()
+                    ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
+                    ->where('status', 'successful')
+                    ->sum('amount');
+                $incomeSummary['total'] = $incomeSummary['daily_remittance'];
+            } elseif ($type === 'charging_payment') {
+                $chargingQuery = \App\Models\ChargingRequest::with(['driver'])
+                    ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                        // Super Admin can filter by branch
+                        if ($branchId) {
+                            $query->whereHas('driver', function ($q) use ($branchId) {
+                                $q->where('branch_id', $branchId);
+                            });
+                        }
+                    }, function ($query) use ($user) {
+                        BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+                    })
+                    ->when($start && $end, function ($query) use ($start, $end) {
+                        $query->whereBetween('created_at', [$start, $end]);
+                    })
+                    ->when($driverId, function ($query) use ($driverId) {
+                        $query->where('driver_id', $driverId);
+                    })
+                    ->when($chargingStatus, function ($query) use ($chargingStatus) {
+                        $query->where('status', $chargingStatus);
+                    })
+                    ->when($status, function ($query) use ($status) {
+                        // Map transaction status to charging status
+                        if ($status === 'successful') {
+                            $query->whereIn('status', ['approved', 'completed']);
+                        } elseif ($status === 'pending') {
+                            $query->where('status', 'pending');
+                        } elseif ($status === 'rejected') {
+                            $query->where('status', 'cancelled');
+                        }
+                    })
+                    ->whereIn('status', ['approved', 'completed']);
+                    
+                $incomeSummary['charging'] = $chargingQuery->sum('charging_cost');
+                $incomeSummary['total'] = $incomeSummary['charging'];
+            } elseif ($type === 'maintenance_debit') {
+                $incomeSummary['maintenance'] = $summaryQuery->clone()
+                    ->where('type', Transaction::TYPE_MAINTENANCE_DEBIT)
+                    ->where('status', 'successful')
+                    ->sum('amount');
+                $incomeSummary['total'] = $incomeSummary['maintenance'];
+            }
+        }
+
         // Create CSV file
         $filename = 'payments_report_' . now()->format('Y-m-d_H-i-s') . '.csv';
         
@@ -1273,10 +1386,36 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
 
-        $callback = function() use ($transactions) {
+        $callback = function() use ($transactions, $incomeSummary, $timeFilter, $status, $type) {
             $file = fopen('php://output', 'w');
             
-            // Add CSV header
+            // Add summary section first
+            fputcsv($file, ['PAYMENTS REPORT SUMMARY']);
+            fputcsv($file, ['Generated:', now()->format('M d, Y H:i')]);
+            fputcsv($file, ['Time Filter:', ucfirst(str_replace('_', ' ', $timeFilter))]);
+            if ($status) {
+                fputcsv($file, ['Status:', ucfirst($status)]);
+            }
+            if ($type) {
+                fputcsv($file, ['Type:', str_replace('_', ' ', ucfirst($type))]);
+            }
+            fputcsv($file, []);
+            
+            fputcsv($file, ['INCOME SUMMARY']);
+            fputcsv($file, ['Daily Remittance:', 'N' . number_format($incomeSummary['daily_remittance'], 2)]);
+            fputcsv($file, ['Charging:', 'N' . number_format($incomeSummary['charging'], 2)]);
+            fputcsv($file, ['Maintenance:', 'N' . number_format($incomeSummary['maintenance'], 2)]);
+            fputcsv($file, ['Total Income:', 'N' . number_format($incomeSummary['total'], 2)]);
+            fputcsv($file, []);
+            
+            fputcsv($file, ['TRANSACTION COUNTS']);
+            fputcsv($file, ['Total Transactions:', $transactions->count()]);
+            fputcsv($file, ['Successful:', $transactions->where('status', 'successful')->count()]);
+            fputcsv($file, ['Pending:', $transactions->where('status', 'pending')->count()]);
+            fputcsv($file, ['Rejected:', $transactions->where('status', 'rejected')->count()]);
+            fputcsv($file, []);
+            
+            // Add CSV header for transactions
             fputcsv($file, [
                 'ID',
                 'Date',
