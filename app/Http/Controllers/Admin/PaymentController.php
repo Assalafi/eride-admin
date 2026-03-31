@@ -807,8 +807,72 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 ];
             });
         } else {
-            // Limit to 1000 records to prevent memory issues
-            $transactions = $baseQuery->latest()->limit(1000)->get();
+            // Get regular transactions
+            $regularTransactions = $baseQuery->latest()->limit(1000)->get();
+            
+            // Also get charging requests when no type filter is specified
+            $chargingRequestsQuery = \App\Models\ChargingRequest::with(['driver'])
+                ->when($user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($branchId) {
+                    // Super Admin can filter by branch
+                    if ($branchId) {
+                        $query->whereHas('driver', function ($q) use ($branchId) {
+                            $q->where('branch_id', $branchId);
+                        });
+                    }
+                }, function ($query) use ($user) {
+                    BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
+                })
+                ->when($start && $end, function ($query) use ($start, $end) {
+                    $query->whereBetween('created_at', [$start, $end]);
+                })
+                ->when($driverId, function ($query) use ($driverId) {
+                    $query->where('driver_id', $driverId);
+                })
+                ->when($status, function ($query) use ($status) {
+                    // Map transaction status to charging status
+                    if ($status === 'successful') {
+                        $query->whereIn('status', ['approved', 'completed']);
+                    } elseif ($status === 'pending') {
+                        $query->where('status', 'pending');
+                    } elseif ($status === 'rejected') {
+                        $query->where('status', 'cancelled');
+                    }
+                })
+                ->when($chargingStatus, function ($query) use ($chargingStatus) {
+                    $query->where('status', $chargingStatus);
+                })
+                ->latest()
+                ->limit(1000);
+                
+            $chargingRequests = $chargingRequestsQuery->get();
+            
+            // Transform charging requests to look like transactions
+            $chargingTransactions = $chargingRequests->map(function ($request) {
+                return (object) [
+                    'id' => $request->id,
+                    'driver' => (object) [
+                        'full_name' => $request->driver->full_name ?? 'Unknown Driver',
+                        'phone_number' => $request->driver->phone_number ?? 'N/A',
+                        'branch' => (object) [
+                            'name' => $request->driver->branch->name ?? 'N/A'
+                        ]
+                    ],
+                    'type' => 'charging_payment',
+                    'amount' => $request->charging_cost ?? 0,
+                    'status' => $request->status === 'approved' || $request->status === 'completed' ? 'successful' : 
+                              ($request->status === 'pending' ? 'pending' : 'rejected'),
+                    'payment_proof' => $request->payment_receipt,
+                    'created_at' => $request->created_at,
+                    'approver' => $request->approvedBy,
+                    'description' => null,
+                ];
+            });
+            
+            // Combine regular transactions and charging transactions
+            $allTransactions = $regularTransactions->concat($chargingTransactions);
+            
+            // Sort by created_at date
+            $transactions = $allTransactions->sortByDesc('created_at')->values();
         }
         
         // Calculate summary statistics - same logic as index method
