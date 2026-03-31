@@ -958,6 +958,24 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             ];
         });
         
+        // Create income type breakdown for PDF (only show income-related types)
+        $incomeTypeBreakdown = collect();
+        
+        // Daily Remittance
+        if (isset($typeBreakdown['daily_remittance'])) {
+            $incomeTypeBreakdown['daily_remittance'] = $typeBreakdown['daily_remittance'];
+        }
+        
+        // Charging Payment
+        if (isset($typeBreakdown['charging_payment'])) {
+            $incomeTypeBreakdown['charging_payment'] = $typeBreakdown['charging_payment'];
+        }
+        
+        // Maintenance Debit
+        if (isset($typeBreakdown['maintenance_debit'])) {
+            $incomeTypeBreakdown['maintenance_debit'] = $typeBreakdown['maintenance_debit'];
+        }
+        
         // Prepare filter descriptions for PDF
         $filterDescription = [];
         if ($request->filled('status')) {
@@ -988,7 +1006,7 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             'transactions' => $transactions,
             'summary' => $summary,
             'incomeSummary' => $incomeSummary,
-            'typeBreakdown' => $typeBreakdown,
+            'typeBreakdown' => $incomeTypeBreakdown, // Use filtered breakdown
             'filterDescription' => $filterDescription,
             'recordLimitNote' => $recordLimitNote,
             'user' => $user,
