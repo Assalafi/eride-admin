@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="E-RIDE Nigeria driver companion app.">
+  <meta name="keywords" content="E-RIDE, driver app, Nigeria, wallet, remittance">
+  <meta name="author" content="African Motor Works">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://admin.eride.ng">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://admin.eride.ng">
+  <meta property="og:title" content="E-RIDE Driver">
+  <meta property="og:description" content="Manage your E-RIDE driver wallet, remittances and vehicle assignment.">
+  <meta property="og:image" content="logo.png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:image:alt" content="E-RIDE Logo">
+  <meta property="og:site_name" content="E-RIDE Driver">
+  <meta property="og:locale" content="en_NG">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://admin.eride.ng">
+  <meta name="twitter:title" content="E-RIDE Driver">
+  <meta name="twitter:description" content="Manage your E-RIDE driver wallet, remittances and vehicle assignment.">
+  <meta name="twitter:image" content="logo.png">
+  <meta name="twitter:image:alt" content="E-RIDE Logo">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="E-RIDE Driver">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>E-RIDE Driver</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    #loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #190A62;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .loading-logo {
+      width: 120px;
+      height: 120px;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .loading-text {
+      margin-top: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 20px;
+      font-weight: 600;
+      color: white;
+      animation: fadeIn 1s ease-in;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.8; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+
+  <script>
+    // The value below is injected by flutter build, do not touch.
+    const serviceWorkerVersion = null;
+    // Keep the Flutter shell cache-friendly during driver app updates.
+    window.addEventListener('load', function() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          registrations.forEach(function(registration) {
+            registration.unregister();
+          });
+        });
+      }
+    });
+  </script>
+  <!-- This script adds the flutter initialization JS code -->
+  <script src="flutter.js" defer></script>
+</head>
+<body>
+  <div id="loading">
+    <img src="logo.png" alt="E-RIDE" class="loading-logo" onerror="this.style.display='none'">
+    <div class="loading-text">E-RIDE Driver</div>
+  </div>
+
+  <script>
+    window.addEventListener('load', function(ev) {
+      // Download main.dart.js
+      _flutter.loader.loadEntrypoint({
+        serviceWorker: {
+          serviceWorkerVersion: serviceWorkerVersion,
+        },
+        onEntrypointLoaded: function(engineInitializer) {
+          engineInitializer.initializeEngine().then(function(appRunner) {
+            appRunner.runApp();
+            // Hide loading screen when Flutter app is ready
+            setTimeout(function() {
+              var loading = document.getElementById('loading');
+              if (loading) {
+                loading.classList.add('hidden');
+                setTimeout(function() {
+                  loading.remove();
+                }, 500);
+              }
+            }, 500);
+          });
+        }
+      });
+    });
+  </script>
+</body>
+</html>

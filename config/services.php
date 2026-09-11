@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    'opay' => [
+        'public_key' => env('OPAY_PUBLIC_KEY'),
+        'secret_key' => env('OPAY_SECRET_KEY'),
+        'merchant_id' => env('OPAY_MERCHANT_ID'),
+        'base_url' => env('OPAY_BASE_URL', 'https://liveapi.opaycheckout.com'),
+        'country' => env('OPAY_COUNTRY', 'NG'),
+        'currency' => env('OPAY_CURRENCY', 'NGN'),
+        'return_url' => env('OPAY_RETURN_URL', env('APP_URL') . '/driver/payment/return'),
+        'cancel_url' => env('OPAY_CANCEL_URL', env('APP_URL') . '/driver/payment/cancel'),
+        'callback_url' => env('OPAY_CALLBACK_URL', env('APP_URL') . '/api/payments/opay/callback'),
+    ],
+
 ];

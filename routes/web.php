@@ -18,6 +18,9 @@ use App\Http\Controllers\Admin\HirePurchaseController;
 use App\Http\Controllers\Auth\LoginController;
 use Illuminate\Support\Facades\Route;
 
+Route::view('/driver/payment/return', 'driver.payment-return')->name('driver.payment.return');
+Route::view('/driver/payment/cancel', 'driver.payment-return')->name('driver.payment.cancel');
+
 // Public routes
 Route::get('/', function () {
     return redirect()->route('login');

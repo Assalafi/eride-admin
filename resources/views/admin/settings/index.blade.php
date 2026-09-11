@@ -57,6 +57,53 @@
                 </div>
             </div>
 
+            <!-- OPay Payment Gateway -->
+            <div class="card bg-white border-0 rounded-3 mb-4">
+                <div class="card-body p-4">
+                    <h4 class="mb-2">
+                        <span class="material-symbols-outlined me-2" style="vertical-align: middle;">account_balance</span>
+                        OPay Payment Gateway
+                    </h4>
+                    <p class="text-muted mb-4">Configure live driver wallet funding and remittance checkout without editing the server environment.</p>
+
+                    @php
+                        $opaySettings = $settings->get('payment', collect())->keyBy('key');
+                        $opayFields = [
+                            'opay_public_key' => ['label' => 'Public key', 'type' => 'text'],
+                            'opay_secret_key' => ['label' => 'Secret key', 'type' => 'password'],
+                            'opay_merchant_id' => ['label' => 'Merchant ID', 'type' => 'text'],
+                            'opay_base_url' => ['label' => 'API base URL', 'type' => 'url'],
+                            'opay_country' => ['label' => 'Country code', 'type' => 'text'],
+                            'opay_currency' => ['label' => 'Currency', 'type' => 'text'],
+                            'opay_return_url' => ['label' => 'Return URL', 'type' => 'url'],
+                            'opay_cancel_url' => ['label' => 'Cancel URL', 'type' => 'url'],
+                            'opay_callback_url' => ['label' => 'Callback URL', 'type' => 'url'],
+                        ];
+                    @endphp
+
+                    @foreach($opayFields as $key => $field)
+                        @php($setting = $opaySettings->get($key))
+                        @if($setting)
+                            <div class="mb-3">
+                                <label for="{{ $key }}" class="form-label fw-semibold">{{ $field['label'] }}</label>
+                                <input type="{{ $field['type'] }}"
+                                       class="form-control"
+                                       id="{{ $key }}"
+                                       name="settings[{{ $key }}]"
+                                       value="{{ $field['type'] === 'password' ? '' : old('settings.' . $key, $setting->value) }}"
+                                       placeholder="{{ $field['type'] === 'password' ? ($setting->value ? 'Configured — leave blank to keep it' : 'Enter secret key') : '' }}"
+                                       {{ $field['type'] === 'url' ? 'inputmode=url' : '' }}>
+                                <small class="text-muted">{{ $setting->description }}</small>
+                            </div>
+                        @endif
+                    @endforeach
+
+                    <div class="alert alert-info mb-0">
+                        <strong>Security:</strong> Secret keys are stored server-side and are never sent to the driver app.
+                    </div>
+                </div>
+            </div>
+
             <!-- Financial Settings -->
             <div class="card bg-white border-0 rounded-3 mb-4">
                 <div class="card-body p-4">
@@ -107,6 +154,7 @@
                     @foreach($booleanSettings as $setting)
                     <div class="mb-3">
                         <div class="form-check form-switch">
+                            <input type="hidden" name="settings[{{ $setting->key }}]" value="0">
                             <input class="form-check-input" 
                                    type="checkbox" 
                                    role="switch" 

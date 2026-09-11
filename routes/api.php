@@ -6,10 +6,14 @@ use App\Http\Controllers\Api\DriverApiController;
 use App\Http\Controllers\Api\MechanicController;
 use App\Http\Controllers\Api\AccountantApiController;
 use App\Http\Controllers\Api\AdminApiController;
+use App\Http\Controllers\Api\DriverPaymentController;
 use Illuminate\Support\Facades\Route;
 
 // Public API routes
 Route::post('/login', [AuthController::class, 'login']);
+
+// OPay callback is intentionally public; the controller verifies OPay's signature.
+Route::post('/payments/opay/callback', [DriverPaymentController::class, 'callback']);
 
 // Protected API routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -32,6 +36,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/wallet/fund-request', [DriverApiController::class, 'requestWalletFunding']);
         Route::get('/wallet/funding-requests', [DriverApiController::class, 'walletFundingRequests']);
         Route::get('/transactions', [DriverApiController::class, 'transactions']);
+
+        // New driver app payments. Legacy proof-upload routes remain unchanged below.
+        Route::post('/payments/opay/checkout', [DriverPaymentController::class, 'checkout']);
+        Route::get('/payments/opay/{reference}', [DriverPaymentController::class, 'status']);
         
         // Daily Remittance
         Route::get('/remittance/pending', [DriverApiController::class, 'getPendingRemittances']);
