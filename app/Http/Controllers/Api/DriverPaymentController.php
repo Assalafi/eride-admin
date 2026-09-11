@@ -34,7 +34,7 @@ class DriverPaymentController extends Controller
             return response()->json(['success' => false, 'message' => 'Driver profile not found'], 404);
         }
 
-        if (!$this->opayEnabled()) {
+        if (!$this->opayReady()) {
             return response()->json(['success' => false, 'message' => 'OPay payments are currently unavailable'], 503);
         }
 
@@ -274,6 +274,14 @@ class DriverPaymentController extends Controller
     {
         $value = $this->opay('enabled', true);
         return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? ((string) $value === '1');
+    }
+
+    private function opayReady(): bool
+    {
+        return $this->opayEnabled()
+            && filled($this->opay('public_key'))
+            && filled($this->opay('secret_key'))
+            && filled($this->opay('merchant_id'));
     }
 
     private function opay(string $key, mixed $default = null): mixed
