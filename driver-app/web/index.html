@@ -99,8 +99,6 @@
   </style>
 
   <script>
-    // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = null;
     // Keep the Flutter shell cache-friendly during driver app updates.
     window.addEventListener('load', function() {
       if ('serviceWorker' in navigator) {
@@ -112,8 +110,6 @@
       }
     });
   </script>
-  <!-- This script adds the flutter initialization JS code -->
-  <script src="flutter.js" defer></script>
 </head>
 <body>
   <div id="loading">
@@ -121,29 +117,16 @@
     <div class="loading-text">E-RIDE Driver</div>
   </div>
 
+  <script src="flutter_bootstrap.js" async></script>
   <script>
-    window.addEventListener('load', function(ev) {
-      // Download main.dart.js
-      _flutter.loader.loadEntrypoint({
-        serviceWorker: {
-          serviceWorkerVersion: serviceWorkerVersion,
-        },
-        onEntrypointLoaded: function(engineInitializer) {
-          engineInitializer.initializeEngine().then(function(appRunner) {
-            appRunner.runApp();
-            // Hide loading screen when Flutter app is ready
-            setTimeout(function() {
-              var loading = document.getElementById('loading');
-              if (loading) {
-                loading.classList.add('hidden');
-                setTimeout(function() {
-                  loading.remove();
-                }, 500);
-              }
-            }, 500);
-          });
-        }
-      });
+    window.addEventListener('flutter-first-frame', function() {
+      var loading = document.getElementById('loading');
+      if (loading) {
+        loading.classList.add('hidden');
+        setTimeout(function() {
+          loading.remove();
+        }, 500);
+      }
     });
   </script>
 </body>

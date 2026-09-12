@@ -91,6 +91,68 @@ class DriverApiController extends Controller
                     ->count(),
             ];
 
+            $successfulStatuses = [
+                Transaction::STATUS_SUCCESSFUL,
+                'completed',
+                'paid',
+                'approved',
+            ];
+
+            $remittanceQuery = Transaction::with('hirePurchaseContract:id,total_balance,status')
+                ->where('driver_id', $driver->id)
+                ->where('type', Transaction::TYPE_DAILY_REMITTANCE);
+
+            $remittanceSummary = [
+                'total_count' => (clone $remittanceQuery)->count(),
+                'paid_count' => (clone $remittanceQuery)->whereIn('status', $successfulStatuses)->count(),
+                'pending_count' => (clone $remittanceQuery)
+                    ->where('status', Transaction::STATUS_PENDING)
+                    ->count(),
+                'total_paid' => (float) (clone $remittanceQuery)
+                    ->whereIn('status', $successfulStatuses)
+                    ->sum('amount'),
+                'pending_amount' => (float) (clone $remittanceQuery)
+                    ->where('status', Transaction::STATUS_PENDING)
+                    ->sum('amount'),
+                'this_month_paid' => (float) (clone $remittanceQuery)
+                    ->whereIn('status', $successfulStatuses)
+                    ->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)
+                    ->sum('amount'),
+                'this_month_count' => (clone $remittanceQuery)
+                    ->whereIn('status', $successfulStatuses)
+                    ->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)
+                    ->count(),
+            ];
+
+            $nextRemittance = (clone $remittanceQuery)
+                ->where('status', Transaction::STATUS_PENDING)
+                ->whereNull('payment_proof')
+                ->oldest()
+                ->first();
+
+            $recentRemittances = (clone $remittanceQuery)
+                ->latest()
+                ->limit(5)
+                ->get()
+                ->map(function (Transaction $transaction) use ($successfulStatuses) {
+                    $status = in_array($transaction->status, $successfulStatuses, true)
+                        ? 'paid'
+                        : ($transaction->status === Transaction::STATUS_REJECTED ? 'rejected' : $transaction->status);
+
+                    return [
+                        'id' => $transaction->id,
+                        'reference' => $transaction->reference,
+                        'description' => $transaction->description,
+                        'amount' => (float) $transaction->amount,
+                        'minimum_amount' => $this->minimumRemittanceAmount($transaction),
+                        'status' => $status,
+                        'created_at' => $transaction->created_at->toIso8601String(),
+                        'created_date' => $transaction->created_at->format('M d, Y'),
+                    ];
+                });
+
             // Get charging fee from system settings (same as charging request page)
             $chargingFee = SystemSetting::get('charging_per_session', '5000');
 
@@ -133,6 +195,9 @@ class DriverApiController extends Controller
                         'progress_percentage' => $activeContract->progress_percentage,
                         'payments_made' => $activeContract->payments_made,
                         'payments_remaining' => $activeContract->payments_remaining,
+                        'estimated_payment_days_remaining' => $activeContract->daily_payment > 0
+                            ? (int) ceil($activeContract->total_balance / $activeContract->daily_payment)
+                            : 0,
                         'total_payment_days' => $activeContract->total_payment_days,
                         'start_date' => $activeContract->start_date->format('Y-m-d'),
                         'expected_end_date' => $activeContract->expected_end_date->format('Y-m-d'),
@@ -217,6 +282,17 @@ class DriverApiController extends Controller
                     'pending_requests' => $pendingCounts,
                     'total_counts' => $totalCounts,
                     'monthly_stats' => $monthlyStats,
+                    'remittance_summary' => $remittanceSummary,
+                    'next_remittance' => $nextRemittance ? [
+                        'id' => $nextRemittance->id,
+                        'reference' => $nextRemittance->reference,
+                        'description' => $nextRemittance->description,
+                        'minimum_amount' => $this->minimumRemittanceAmount($nextRemittance),
+                        'status' => $nextRemittance->status,
+                        'created_at' => $nextRemittance->created_at->toIso8601String(),
+                        'created_date' => $nextRemittance->created_at->format('M d, Y'),
+                    ] : null,
+                    'recent_remittances' => $recentRemittances,
                     'hire_purchase' => $hirePurchaseData,
                     'charging_fee' => (float) $chargingFee,
                     'charging_fee_formatted' => '₦' . number_format($chargingFee, 2),
@@ -766,7 +842,8 @@ class DriverApiController extends Controller
             }
 
             // Get remittances that are pending and don't have payment proof yet
-            $pendingRemittances = Transaction::where('driver_id', $driver->id)
+            $pendingRemittances = Transaction::with('hirePurchaseContract:id,total_balance,status')
+                ->where('driver_id', $driver->id)
                 ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
                 ->where('status', Transaction::STATUS_PENDING)
                 ->whereNull('payment_proof')
@@ -776,6 +853,7 @@ class DriverApiController extends Controller
                     return [
                         'id' => $txn->id,
                         'amount' => (float) $txn->amount,
+                        'minimum_amount' => $this->minimumRemittanceAmount($txn),
                         'formatted_amount' => '₦' . number_format($txn->amount, 2),
                         'reference' => $txn->reference,
                         'description' => $txn->description,
@@ -824,27 +902,27 @@ class DriverApiController extends Controller
             }
 
             // Get all remittances for this driver with all statuses
-            $allRemittances = Transaction::where('driver_id', $driver->id)
+            $allRemittances = Transaction::with('hirePurchaseContract:id,total_balance,status')
+                ->where('driver_id', $driver->id)
                 ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
                 ->latest()
                 ->get()
                 ->map(function($txn) {
-                    // Determine status based on payment proof and transaction status
+                    // Gateway payments do not upload a proof image, so status must
+                    // take precedence over proof presence for legacy clients.
                     $status = 'pending';
-                    if ($txn->payment_proof) {
-                        // Has payment proof - check transaction status
-                        if ($txn->status === Transaction::STATUS_SUCCESSFUL) {
-                            $status = 'approved';
-                        } elseif ($txn->status === Transaction::STATUS_REJECTED) {
-                            $status = 'rejected';
-                        } else {
-                            $status = 'submitted'; // Has proof but pending approval
-                        }
+                    if (in_array($txn->status, [Transaction::STATUS_SUCCESSFUL, 'completed', 'paid', 'approved'], true)) {
+                        $status = 'approved';
+                    } elseif ($txn->status === Transaction::STATUS_REJECTED) {
+                        $status = 'rejected';
+                    } elseif ($txn->payment_proof) {
+                        $status = 'submitted';
                     }
 
                     return [
                         'id' => $txn->id,
                         'amount' => (float) $txn->amount,
+                        'minimum_amount' => $this->minimumRemittanceAmount($txn),
                         'formatted_amount' => '₦' . number_format($txn->amount, 2),
                         'reference' => $txn->reference,
                         'description' => $txn->description,
@@ -1779,5 +1857,27 @@ class DriverApiController extends Controller
                 ];
             }),
         ]);
+    }
+
+    /**
+     * The generated remittance is a minimum. On the final hire-purchase
+     * instalment the outstanding contract balance can be lower than the
+     * originally generated amount, so expose the payable minimum safely.
+     */
+    private function minimumRemittanceAmount(Transaction $transaction): float
+    {
+        $generatedAmount = (float) $transaction->amount;
+
+        if (!$transaction->is_hire_purchase_payment || !$transaction->hire_purchase_contract_id) {
+            return $generatedAmount;
+        }
+
+        $remainingBalance = (float) ($transaction->relationLoaded('hirePurchaseContract')
+            ? $transaction->hirePurchaseContract?->total_balance
+            : HirePurchaseContract::whereKey($transaction->hire_purchase_contract_id)->value('total_balance'));
+
+        return $remainingBalance > 0
+            ? min($generatedAmount, $remainingBalance)
+            : $generatedAmount;
     }
 }

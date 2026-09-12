@@ -18,6 +18,7 @@ class PaymentGatewayTransaction extends Model
         'gateway_order_no',
         'gateway_transaction_id',
         'amount',
+        'minimum_amount',
         'amount_minor',
         'currency',
         'status',
@@ -31,6 +32,7 @@ class PaymentGatewayTransaction extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'minimum_amount' => 'decimal:2',
         'amount_minor' => 'integer',
         'gateway_response' => 'array',
         'callback_payload' => 'array',

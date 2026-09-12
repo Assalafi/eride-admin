@@ -47,7 +47,7 @@ class DailyLedger extends Model
             $this->status = 'due';
         }
         
-        $this->balance = $this->required_payment - $this->amount_paid;
+        $this->balance = max(0, (float) $this->required_payment - (float) $this->amount_paid);
         $this->save();
     }
 }

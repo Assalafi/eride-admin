@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'token_store.dart';
 
 class AuthState extends ChangeNotifier {
   bool initializing = true;
@@ -20,7 +21,7 @@ class AuthState extends ChangeNotifier {
 
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('driver_token');
+    final token = await TokenStore.read();
     biometricEnabled = prefs.getBool('biometric_enabled') ?? false;
     hasSavedSession = token != null && token.isNotEmpty;
 
@@ -55,9 +56,10 @@ class AuthState extends ChangeNotifier {
         'password': password,
       });
       final token = response['token']?.toString();
-      if (token == null || token.isEmpty) throw ApiException('Login response did not contain a session token.');
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('driver_token', token);
+      if (token == null || token.isEmpty) {
+        throw ApiException('Login response did not contain a session token.');
+      }
+      await TokenStore.write(token);
       user = _readUser(response);
       if (user == null) await _restoreSession();
       hasSavedSession = true;
@@ -79,7 +81,8 @@ class AuthState extends ChangeNotifier {
     try {
       final auth = LocalAuthentication();
       if (!await auth.canCheckBiometrics) return false;
-      final verified = await auth.authenticate(localizedReason: 'Verify your identity to open E-RIDE Driver');
+      final verified = await auth.authenticate(
+          localizedReason: 'Verify your identity to open E-RIDE Driver');
       if (!verified) return false;
       busy = true;
       notifyListeners();
@@ -102,7 +105,11 @@ class AuthState extends ChangeNotifier {
       try {
         final auth = LocalAuthentication();
         if (!await auth.canCheckBiometrics) return false;
-        if (!await auth.authenticate(localizedReason: 'Verify your identity to enable biometric login')) return false;
+        if (!await auth.authenticate(
+            localizedReason:
+                'Verify your identity to enable biometric login')) {
+          return false;
+        }
       } catch (_) {
         return false;
       }
@@ -124,8 +131,7 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> _clearToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('driver_token');
+    await TokenStore.clear();
     hasSavedSession = false;
   }
 

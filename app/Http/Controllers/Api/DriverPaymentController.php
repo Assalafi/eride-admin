@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\PaymentApproved;
 use App\Http\Controllers\Controller;
-use App\Models\DailyLedger;
 use App\Models\Driver;
+use App\Models\HirePurchaseContract;
 use App\Models\PaymentGatewayTransaction;
 use App\Models\SystemSetting;
 use App\Models\Transaction;
 use App\Models\WalletFundingRequest;
+use App\Services\RemittanceSettlementService;
 use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +20,10 @@ use Illuminate\Validation\ValidationException;
 
 class DriverPaymentController extends Controller
 {
+    public function __construct(
+        private readonly RemittanceSettlementService $remittanceSettlement,
+    ) {}
+
     public function checkout(Request $request)
     {
         $data = $request->validate([
@@ -40,10 +44,11 @@ class DriverPaymentController extends Controller
 
         $amount = round((float) $data['amount'], 2);
         $amountMinor = (int) round($amount * 100);
+        $minimumAmount = $amount;
         $reference = 'ERIDE-' . strtoupper(Str::random(24));
 
         try {
-            $gateway = DB::transaction(function () use ($data, $driver, $amount, $amountMinor, $reference) {
+            $checkout = DB::transaction(function () use ($data, $driver, $amount, $amountMinor, $reference, &$minimumAmount) {
                 $transaction = null;
                 $fundingRequest = null;
 
@@ -53,6 +58,7 @@ class DriverPaymentController extends Controller
                             ->where('driver_id', $driver->id)
                             ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
                             ->whereIn('status', [Transaction::STATUS_PENDING, 'submitted'])
+                            ->lockForUpdate()
                             ->first();
 
                         if (!$transaction) {
@@ -61,9 +67,54 @@ class DriverPaymentController extends Controller
                             ]);
                         }
 
-                        if ((float) $transaction->amount !== $amount) {
+                        $minimumAmount = round((float) $transaction->amount, 2);
+
+                        $remainingBalance = null;
+                        if ($transaction->is_hire_purchase_payment && $transaction->hire_purchase_contract_id) {
+                            $contract = HirePurchaseContract::whereKey($transaction->hire_purchase_contract_id)
+                                ->lockForUpdate()
+                                ->first();
+
+                            if (!$contract || $contract->status !== HirePurchaseContract::STATUS_ACTIVE || (float) $contract->total_balance <= 0) {
+                                throw ValidationException::withMessages([
+                                    'transaction_id' => 'This hire-purchase contract has already been completed or is no longer active.',
+                                ]);
+                            }
+
+                            $remainingBalance = (float) $contract->total_balance;
+
+                            if ($remainingBalance > 0) {
+                                $minimumAmount = min($minimumAmount, round($remainingBalance, 2));
+                            }
+                        }
+
+                        if ($amount < $minimumAmount) {
                             throw ValidationException::withMessages([
-                                'amount' => 'The payment amount does not match the remittance.',
+                                'amount' => 'The minimum payment for this remittance is ₦' . number_format($minimumAmount, 2) . '.',
+                            ]);
+                        }
+
+                        if ($remainingBalance !== null) {
+                            if ($remainingBalance > 0 && $amount > $remainingBalance) {
+                                throw ValidationException::withMessages([
+                                    'amount' => 'The payment cannot exceed the remaining hire-purchase balance of ₦' . number_format($remainingBalance, 2) . '.',
+                                ]);
+                            }
+                        }
+
+                        $activeGateway = PaymentGatewayTransaction::where('transaction_id', $transaction->id)
+                            ->whereIn('status', ['INITIAL', 'PENDING'])
+                            ->where('created_at', '>=', now()->subMinutes(35))
+                            ->latest()
+                            ->first();
+
+                        if ($activeGateway?->checkout_url) {
+                            return ['gateway' => $activeGateway, 'reused' => true];
+                        }
+
+                        if ($activeGateway) {
+                            throw ValidationException::withMessages([
+                                'transaction_id' => 'A checkout is already being created for this remittance. Please retry shortly.',
                             ]);
                         }
                     } else {
@@ -84,19 +135,33 @@ class DriverPaymentController extends Controller
                     ]);
                 }
 
-                return PaymentGatewayTransaction::create([
-                    'driver_id' => $driver->id,
-                    'gateway' => 'opay',
-                    'purpose' => $data['purpose'],
-                    'reference' => $reference,
-                    'amount' => $amount,
-                    'amount_minor' => $amountMinor,
-                    'currency' => $this->opay('currency', 'NGN'),
-                    'status' => 'INITIAL',
-                    'transaction_id' => $transaction?->id,
-                    'wallet_funding_request_id' => $fundingRequest?->id,
-                ]);
+                return [
+                    'gateway' => PaymentGatewayTransaction::create([
+                        'driver_id' => $driver->id,
+                        'gateway' => 'opay',
+                        'purpose' => $data['purpose'],
+                        'reference' => $reference,
+                        'amount' => $amount,
+                        'minimum_amount' => $minimumAmount,
+                        'amount_minor' => $amountMinor,
+                        'currency' => $this->opay('currency', 'NGN'),
+                        'status' => 'INITIAL',
+                        'transaction_id' => $transaction?->id,
+                        'wallet_funding_request_id' => $fundingRequest?->id,
+                    ]),
+                    'reused' => false,
+                ];
             });
+
+            /** @var PaymentGatewayTransaction $gateway */
+            $gateway = $checkout['gateway'];
+            if ($checkout['reused']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Existing checkout resumed',
+                    'data' => $this->serializeGateway($gateway),
+                ]);
+            }
 
             $payload = $this->cashierPayload($gateway, $driver, $request);
             $response = $this->opayCreate($payload);
@@ -106,6 +171,7 @@ class DriverPaymentController extends Controller
                     'status' => 'FAIL',
                     'gateway_response' => $response->json() ?: ['body' => $response->body()],
                 ]);
+                $this->rejectFailedWalletFunding($gateway, 'OPay checkout could not be initialized.');
 
                 return response()->json([
                     'success' => false,
@@ -122,6 +188,7 @@ class DriverPaymentController extends Controller
             ]);
 
             if (empty($opayData['cashierUrl'])) {
+                $this->rejectFailedWalletFunding($gateway, 'OPay did not return a checkout URL.');
                 return response()->json(['success' => false, 'message' => 'OPay did not return a checkout URL'], 502);
             }
 
@@ -298,7 +365,7 @@ class DriverPaymentController extends Controller
     {
         $status = strtoupper($status);
         $mapped = match ($status) {
-            'SUCCESS' => 'SUCCESS',
+            'SUCCESS', 'SUCCESSFUL', 'PAID', 'COMPLETED' => 'SUCCESS',
             'FAIL', 'FAILED' => 'FAIL',
             'CLOSE', 'CANCELLED', 'CANCELED' => 'CLOSE',
             default => 'PENDING',
@@ -328,6 +395,10 @@ class DriverPaymentController extends Controller
                 }
             }
 
+            if (in_array($update['status'], ['FAIL', 'CLOSE'], true)) {
+                $this->rejectFailedWalletFunding($locked, 'OPay payment was not completed.');
+            }
+
             $locked->update($update);
         });
     }
@@ -337,12 +408,12 @@ class DriverPaymentController extends Controller
         if ($gateway->purpose === 'remittance' && $gateway->transaction_id) {
             $transaction = Transaction::lockForUpdate()->find($gateway->transaction_id);
             if ($transaction && $transaction->status !== Transaction::STATUS_SUCCESSFUL) {
-                $transaction->update([
-                    'status' => Transaction::STATUS_SUCCESSFUL,
-                    'paid_at' => now(),
-                    'processed_at' => now(),
-                ]);
-                PaymentApproved::dispatch($transaction->fresh());
+                $this->remittanceSettlement->settle(
+                    $transaction,
+                    (float) $gateway->amount,
+                    (float) ($gateway->minimum_amount ?? $transaction->amount),
+                    $gateway->reference,
+                );
             }
         }
 
@@ -380,12 +451,27 @@ class DriverPaymentController extends Controller
         return $received === (int) $gateway->amount_minor || $received === (int) round((float) $gateway->amount);
     }
 
+    private function rejectFailedWalletFunding(PaymentGatewayTransaction $gateway, string $reason): void
+    {
+        if ($gateway->purpose !== 'wallet_funding' || !$gateway->wallet_funding_request_id) {
+            return;
+        }
+
+        WalletFundingRequest::whereKey($gateway->wallet_funding_request_id)
+            ->where('status', WalletFundingRequest::STATUS_PENDING)
+            ->update([
+                'status' => WalletFundingRequest::STATUS_REJECTED,
+                'admin_notes' => $reason,
+            ]);
+    }
+
     private function serializeGateway(PaymentGatewayTransaction $gateway): array
     {
         return [
             'reference' => $gateway->reference,
             'purpose' => $gateway->purpose,
             'amount' => (float) $gateway->amount,
+            'minimum_amount' => (float) $gateway->minimum_amount,
             'currency' => $gateway->currency,
             'status' => strtolower($gateway->status),
             'checkout_url' => $gateway->checkout_url,
