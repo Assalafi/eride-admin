@@ -82,7 +82,9 @@
                     @endphp
 
                     @foreach($opayFields as $key => $field)
-                        @php($setting = $opaySettings->get($key))
+                        @php
+                            $setting = $opaySettings->get($key);
+                        @endphp
                         @if($setting)
                             <div class="mb-3">
                                 <label for="{{ $key }}" class="form-label fw-semibold">{{ $field['label'] }}</label>
