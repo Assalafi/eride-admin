@@ -181,6 +181,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       final data = asMap(response['data']);
       final checkoutUrl = data['checkout_url']?.toString() ?? '';
       final reference = data['reference']?.toString() ?? '';
+      final environment = data['environment']?.toString() ?? 'live';
       final checkoutAmount = asDouble(data['amount']);
       if (checkoutUrl.isEmpty || reference.isEmpty) {
         throw ApiException('OPay did not return a valid checkout session.');
@@ -194,6 +195,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             checkoutUrl: checkoutUrl,
             reference: reference,
             amount: checkoutAmount > 0 ? checkoutAmount : amount,
+            environment: environment,
           ),
         ),
       );

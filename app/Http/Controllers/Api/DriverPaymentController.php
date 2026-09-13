@@ -104,6 +104,7 @@ class DriverPaymentController extends Controller
                         }
 
                         $activeGateway = PaymentGatewayTransaction::where('transaction_id', $transaction->id)
+                            ->where('environment', $environment)
                             ->whereIn('status', ['INITIAL', 'PENDING'])
                             ->where('created_at', '>=', now()->subMinutes(35))
                             ->latest()

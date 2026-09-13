@@ -16,11 +16,15 @@ class OpayCheckoutPage extends StatefulWidget {
     required this.checkoutUrl,
     required this.reference,
     required this.amount,
+    required this.environment,
   });
 
   final String checkoutUrl;
   final String reference;
   final double amount;
+  final String environment;
+
+  bool get isDemo => environment.toLowerCase() == 'demo';
 
   @override
   State<OpayCheckoutPage> createState() => _OpayCheckoutPageState();
@@ -132,16 +136,18 @@ class _OpayCheckoutPageState extends State<OpayCheckoutPage> {
             icon: const Icon(Icons.arrow_back_rounded),
           ),
           titleSpacing: 0,
-          title: const Column(
+          title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              const Text(
                 'Secure OPay checkout',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
               ),
               Text(
-                'Payment stays inside eRide',
-                style: TextStyle(
+                widget.isDemo
+                    ? 'Demo sandbox - payment stays inside eRide'
+                    : 'Payment stays inside eRide',
+                style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w500,
                   color: AppColors.navy,
@@ -167,7 +173,7 @@ class _OpayCheckoutPageState extends State<OpayCheckoutPage> {
           ),
         ),
         body: Column(children: [
-          _SecureBanner(amount: widget.amount),
+          _SecureBanner(amount: widget.amount, isDemo: widget.isDemo),
           const SizedBox(height: 14),
           Expanded(
             child: _pageError != null && !kIsWeb
@@ -184,9 +190,10 @@ class _OpayCheckoutPageState extends State<OpayCheckoutPage> {
 }
 
 class _SecureBanner extends StatelessWidget {
-  const _SecureBanner({required this.amount});
+  const _SecureBanner({required this.amount, required this.isDemo});
 
   final double amount;
+  final bool isDemo;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -221,14 +228,42 @@ class _SecureBanner extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 11),
-            const Expanded(
-              child: Text(
-                'Encrypted payment session',
-                style: TextStyle(
-                  color: AppColors.navy,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Encrypted payment session',
+                    style: TextStyle(
+                      color: AppColors.navy,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (isDemo) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Color(0xfffff3cd),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'DEMO SANDBOX',
+                        style: TextStyle(
+                          color: Color(0xff8a5a00),
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             Text(
