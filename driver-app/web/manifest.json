@@ -1,11 +1,11 @@
 {
-    "name": "E-RIDE Driver",
-    "short_name": "E-RIDE Driver",
+    "name": "eRide Driver",
+    "short_name": "eRide Driver",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#190A62",
     "theme_color": "#190A62",
-    "description": "E-RIDE Nigeria driver companion app.",
+    "description": "eRide Nigeria driver companion app.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

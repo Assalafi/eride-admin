@@ -82,7 +82,7 @@ class AuthState extends ChangeNotifier {
       final auth = LocalAuthentication();
       if (!await auth.canCheckBiometrics) return false;
       final verified = await auth.authenticate(
-          localizedReason: 'Verify your identity to open E-RIDE Driver');
+          localizedReason: 'Verify your identity to open eRide Driver');
       if (!verified) return false;
       busy = true;
       notifyListeners();

@@ -263,9 +263,9 @@ class DriverPaymentController extends Controller
                 'total' => $gateway->amount_minor,
                 'currency' => $gateway->currency,
             ],
-            'returnUrl' => $this->opay('return_url', config('services.opay.return_url')),
-            'callbackUrl' => $this->opay('callback_url', config('services.opay.callback_url')),
-            'cancelUrl' => $this->opay('cancel_url', config('services.opay.cancel_url')),
+            'returnUrl' => $this->opay('return_url', route('driver.payment.return')),
+            'callbackUrl' => $this->opay('callback_url', url('/api/payments/opay/callback')),
+            'cancelUrl' => $this->opay('cancel_url', route('driver.payment.cancel')),
             'displayName' => 'E-RIDE Nigeria',
             'customerVisitSource' => $request->header('X-Client-Platform', 'BROWSER') === 'ANDROID' ? 'ANDROID' : 'BROWSER',
             'evokeOpay' => false,
@@ -358,7 +358,10 @@ class DriverPaymentController extends Controller
             return $configured;
         }
 
-        return config('services.opay.' . $key, $default);
+        // OPay credentials and checkout settings are managed from Admin >
+        // Settings. Do not silently fall back to .env values: that can make
+        // the admin UI appear configured while payments use another merchant.
+        return $default;
     }
 
     private function applyStatus(PaymentGatewayTransaction $gateway, string $status, array $payload, ?array $callback = null): void

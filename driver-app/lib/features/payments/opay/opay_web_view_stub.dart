@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// Non-web fallback for the embedded OPay checkout.
 class OpayWebView extends StatelessWidget {
   const OpayWebView({super.key, required this.url});
 
