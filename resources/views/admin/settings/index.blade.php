@@ -68,19 +68,17 @@
 
                     @php
                         $opaySettings = $settings->get('payment', collect())->keyBy('key');
-                        $opayCommonFields = [
-                            'opay_display_name' => ['label' => 'Merchant display name', 'type' => 'text'],
-                            'opay_country' => ['label' => 'Country code', 'type' => 'text'],
-                            'opay_currency' => ['label' => 'Currency', 'type' => 'text'],
-                            'opay_return_url' => ['label' => 'Return URL', 'type' => 'url'],
-                            'opay_cancel_url' => ['label' => 'Cancel URL', 'type' => 'url'],
-                            'opay_callback_url' => ['label' => 'Callback URL', 'type' => 'url'],
-                        ];
                         $opayEnvironmentFields = [
                             'live' => [
-                                'title' => 'Live credentials',
-                                'subtitle' => 'Real OPay payments. Use your production merchant credentials.',
+                                'title' => 'Live settings & credentials',
+                                'subtitle' => 'Real OPay payments. Configure the complete production checkout here.',
                                 'fields' => [
+                                    'opay_live_display_name' => ['label' => 'Merchant display name', 'type' => 'text'],
+                                    'opay_live_country' => ['label' => 'Country code', 'type' => 'text'],
+                                    'opay_live_currency' => ['label' => 'Currency', 'type' => 'text'],
+                                    'opay_live_return_url' => ['label' => 'Return URL', 'type' => 'url'],
+                                    'opay_live_cancel_url' => ['label' => 'Cancel URL', 'type' => 'url'],
+                                    'opay_live_callback_url' => ['label' => 'Callback URL', 'type' => 'url'],
                                     'opay_live_public_key' => ['label' => 'Public key', 'type' => 'text'],
                                     'opay_live_secret_key' => ['label' => 'Secret key', 'type' => 'password'],
                                     'opay_live_merchant_id' => ['label' => 'Merchant ID', 'type' => 'text'],
@@ -88,9 +86,15 @@
                                 ],
                             ],
                             'demo' => [
-                                'title' => 'Demo / sandbox credentials',
-                                'subtitle' => 'Test payments only. Use credentials created for the OPay staging environment.',
+                                'title' => 'Demo / sandbox settings & credentials',
+                                'subtitle' => 'Test payments only. Configure the complete OPay staging checkout here.',
                                 'fields' => [
+                                    'opay_demo_display_name' => ['label' => 'Merchant display name', 'type' => 'text'],
+                                    'opay_demo_country' => ['label' => 'Country code', 'type' => 'text'],
+                                    'opay_demo_currency' => ['label' => 'Currency', 'type' => 'text'],
+                                    'opay_demo_return_url' => ['label' => 'Return URL', 'type' => 'url'],
+                                    'opay_demo_cancel_url' => ['label' => 'Cancel URL', 'type' => 'url'],
+                                    'opay_demo_callback_url' => ['label' => 'Callback URL', 'type' => 'url'],
                                     'opay_demo_public_key' => ['label' => 'Public key', 'type' => 'text'],
                                     'opay_demo_secret_key' => ['label' => 'Secret key', 'type' => 'password'],
                                     'opay_demo_merchant_id' => ['label' => 'Merchant ID', 'type' => 'text'],
@@ -123,24 +127,6 @@
                                 <small class="text-muted">Disable this to pause new driver payments without removing credentials.</small>
                             @endif
                         </div>
-                    </div>
-
-                    <div class="row g-3 mb-4">
-                        @foreach($opayCommonFields as $key => $field)
-                            @php $setting = $opaySettings->get($key); @endphp
-                            @if($setting)
-                                <div class="col-md-6">
-                                    <label for="{{ $key }}" class="form-label fw-semibold">{{ $field['label'] }}</label>
-                                    <input type="{{ $field['type'] }}"
-                                           class="form-control"
-                                           id="{{ $key }}"
-                                           name="settings[{{ $key }}]"
-                                           value="{{ old('settings.' . $key, $setting->value) }}"
-                                           {{ $field['type'] === 'url' ? 'inputmode=url' : '' }}>
-                                    <small class="text-muted">{{ $setting->description }}</small>
-                                </div>
-                            @endif
-                        @endforeach
                     </div>
 
                     @foreach($opayEnvironmentFields as $environmentKey => $environmentGroup)

@@ -146,7 +146,7 @@ class DriverPaymentController extends Controller
                         'amount' => $amount,
                         'minimum_amount' => $minimumAmount,
                         'amount_minor' => $amountMinor,
-                        'currency' => $this->opay('currency', 'NGN'),
+                        'currency' => $this->opay('currency', 'NGN', $environment),
                         'status' => 'INITIAL',
                         'transaction_id' => $transaction?->id,
                         'wallet_funding_request_id' => $fundingRequest?->id,
@@ -367,7 +367,18 @@ class DriverPaymentController extends Controller
 
     private function opay(string $key, mixed $default = null, ?string $environment = null): mixed
     {
-        $environmentScoped = ['public_key', 'secret_key', 'merchant_id', 'base_url'];
+        $environmentScoped = [
+            'public_key',
+            'secret_key',
+            'merchant_id',
+            'base_url',
+            'display_name',
+            'country',
+            'currency',
+            'return_url',
+            'cancel_url',
+            'callback_url',
+        ];
         $settingKey = in_array($key, $environmentScoped, true)
             ? 'opay_' . $this->opayEnvironment($environment) . '_' . $key
             : 'opay_' . $key;
