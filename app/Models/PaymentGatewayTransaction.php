@@ -13,6 +13,7 @@ class PaymentGatewayTransaction extends Model
     protected $fillable = [
         'driver_id',
         'gateway',
+        'environment',
         'purpose',
         'reference',
         'gateway_order_no',

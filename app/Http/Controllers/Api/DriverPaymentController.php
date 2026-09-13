@@ -42,13 +42,14 @@ class DriverPaymentController extends Controller
             return response()->json(['success' => false, 'message' => 'OPay payments are currently unavailable'], 503);
         }
 
+        $environment = $this->opayEnvironment();
         $amount = round((float) $data['amount'], 2);
         $amountMinor = (int) round($amount * 100);
         $minimumAmount = $amount;
         $reference = 'ERIDE-' . strtoupper(Str::random(24));
 
         try {
-            $checkout = DB::transaction(function () use ($data, $driver, $amount, $amountMinor, $reference, &$minimumAmount) {
+            $checkout = DB::transaction(function () use ($data, $driver, $amount, $amountMinor, $reference, $environment, &$minimumAmount) {
                 $transaction = null;
                 $fundingRequest = null;
 
@@ -139,6 +140,7 @@ class DriverPaymentController extends Controller
                     'gateway' => PaymentGatewayTransaction::create([
                         'driver_id' => $driver->id,
                         'gateway' => 'opay',
+                        'environment' => $environment,
                         'purpose' => $data['purpose'],
                         'reference' => $reference,
                         'amount' => $amount,
@@ -164,7 +166,7 @@ class DriverPaymentController extends Controller
             }
 
             $payload = $this->cashierPayload($gateway, $driver, $request);
-            $response = $this->opayCreate($payload);
+            $response = $this->opayCreate($payload, $gateway->environment);
 
             if (!$response->successful() || $response->json('code') !== '00000') {
                 $gateway->update([
@@ -236,7 +238,7 @@ class DriverPaymentController extends Controller
         $payload = $request->input('payload');
         $signature = (string) $request->input('sha512');
 
-        if (!is_array($payload) || !$this->validCallbackSignature($payload, $signature)) {
+        if (!is_array($payload)) {
             return response()->json(['success' => false, 'message' => 'Invalid callback signature'], 401);
         }
 
@@ -245,7 +247,11 @@ class DriverPaymentController extends Controller
             return response()->json(['success' => true, 'message' => 'Callback acknowledged']);
         }
 
-        if (($payload['currency'] ?? $this->opay('currency', 'NGN')) !== $gateway->currency) {
+        if (!$this->validCallbackSignature($payload, $signature, $gateway->environment)) {
+            return response()->json(['success' => false, 'message' => 'Invalid callback signature'], 401);
+        }
+
+        if (($payload['currency'] ?? $this->opay('currency', 'NGN', $gateway->environment)) !== $gateway->currency) {
             return response()->json(['success' => false, 'message' => 'Currency mismatch'], 422);
         }
 
@@ -256,17 +262,18 @@ class DriverPaymentController extends Controller
     private function cashierPayload(PaymentGatewayTransaction $gateway, Driver $driver, Request $request): array
     {
         $user = $driver->user;
+        $environment = $gateway->environment;
         return [
-            'country' => $this->opay('country', 'NG'),
+            'country' => $this->opay('country', 'NG', $environment),
             'reference' => $gateway->reference,
             'amount' => [
                 'total' => $gateway->amount_minor,
                 'currency' => $gateway->currency,
             ],
-            'returnUrl' => $this->opay('return_url', route('driver.payment.return')),
-            'callbackUrl' => $this->opay('callback_url', url('/api/payments/opay/callback')),
-            'cancelUrl' => $this->opay('cancel_url', route('driver.payment.cancel')),
-            'displayName' => 'E-RIDE Nigeria',
+            'returnUrl' => $this->opay('return_url', route('driver.payment.return'), $environment),
+            'callbackUrl' => $this->opay('callback_url', url('/api/payments/opay/callback'), $environment),
+            'cancelUrl' => $this->opay('cancel_url', route('driver.payment.cancel'), $environment),
+            'displayName' => $this->opay('display_name', 'E-RIDE Nigeria', $environment),
             'customerVisitSource' => $request->header('X-Client-Platform', 'BROWSER') === 'ANDROID' ? 'ANDROID' : 'BROWSER',
             'evokeOpay' => false,
             'expireAt' => 30,
@@ -283,37 +290,38 @@ class DriverPaymentController extends Controller
         ];
     }
 
-    private function opayCreate(array $payload): HttpResponse
+    private function opayCreate(array $payload, ?string $environment = null): HttpResponse
     {
         return Http::timeout(30)
             ->acceptJson()
             ->withHeaders([
-                'Authorization' => 'Bearer ' . $this->opay('public_key'),
-                'MerchantId' => $this->opay('merchant_id'),
+                'Authorization' => 'Bearer ' . $this->opay('public_key', null, $environment),
+                'MerchantId' => $this->opay('merchant_id', null, $environment),
             ])
-            ->post(rtrim($this->opay('base_url', 'https://liveapi.opaycheckout.com'), '/') . '/api/v1/international/cashier/create', $payload);
+            ->post(rtrim($this->opay('base_url', 'https://liveapi.opaycheckout.com', $environment), '/') . '/api/v1/international/cashier/create', $payload);
     }
 
     private function opayStatus(PaymentGatewayTransaction $gateway): HttpResponse
     {
+        $environment = $gateway->environment;
         $payload = [
-            'country' => $this->opay('country', 'NG'),
+            'country' => $this->opay('country', 'NG', $environment),
             'reference' => $gateway->reference,
         ];
         ksort($payload);
         $body = json_encode($payload, JSON_UNESCAPED_SLASHES);
-        $signature = hash_hmac('sha512', $body, (string) $this->opay('secret_key'));
+        $signature = hash_hmac('sha512', $body, (string) $this->opay('secret_key', null, $environment));
 
         return Http::timeout(30)
             ->acceptJson()
             ->withHeaders([
                 'Authorization' => 'Bearer ' . $signature,
-                'MerchantId' => $this->opay('merchant_id'),
+                'MerchantId' => $this->opay('merchant_id', null, $environment),
             ])
-            ->post(rtrim($this->opay('base_url', 'https://liveapi.opaycheckout.com'), '/') . '/api/v1/international/cashier/status', $payload);
+            ->post(rtrim($this->opay('base_url', 'https://liveapi.opaycheckout.com', $environment), '/') . '/api/v1/international/cashier/status', $payload);
     }
 
-    private function validCallbackSignature(array $payload, string $signature): bool
+    private function validCallbackSignature(array $payload, string $signature, ?string $environment = null): bool
     {
         if ($signature === '' || !isset($payload['amount'], $payload['currency'], $payload['reference'], $payload['status'], $payload['timestamp'], $payload['transactionId'])) {
             return false;
@@ -333,7 +341,7 @@ class DriverPaymentController extends Controller
 
         return hash_equals(
             strtolower($signature),
-            strtolower(hash_hmac('sha3-512', $canonical, (string) $this->opay('secret_key')))
+            strtolower(hash_hmac('sha3-512', $canonical, (string) $this->opay('secret_key', null, $environment)))
         );
     }
 
@@ -351,16 +359,36 @@ class DriverPaymentController extends Controller
             && filled($this->opay('merchant_id'));
     }
 
-    private function opay(string $key, mixed $default = null): mixed
+    private function opayEnvironment(?string $environment = null): string
     {
-        $configured = SystemSetting::get('opay_' . $key);
+        $environment = strtolower(trim((string) ($environment ?? SystemSetting::get('opay_environment', 'live'))));
+        return in_array($environment, ['live', 'demo'], true) ? $environment : 'live';
+    }
+
+    private function opay(string $key, mixed $default = null, ?string $environment = null): mixed
+    {
+        $environmentScoped = ['public_key', 'secret_key', 'merchant_id', 'base_url'];
+        $settingKey = in_array($key, $environmentScoped, true)
+            ? 'opay_' . $this->opayEnvironment($environment) . '_' . $key
+            : 'opay_' . $key;
+        $configured = SystemSetting::get($settingKey);
         if ($configured !== null && $configured !== '') {
             return $configured;
         }
 
+        // Preserve existing live credentials during the one-time migration if
+        // an older installation has not populated the environment-specific
+        // fields yet. This fallback is still database-only, never .env.
+        if (in_array($key, $environmentScoped, true) && $this->opayEnvironment($environment) === 'live') {
+            $legacy = SystemSetting::get('opay_' . $key);
+            if ($legacy !== null && $legacy !== '') {
+                return $legacy;
+            }
+        }
+
         // OPay credentials and checkout settings are managed from Admin >
-        // Settings. Do not silently fall back to .env values: that can make
-        // the admin UI appear configured while payments use another merchant.
+        // Settings. Never fall back to .env values: that can make the admin UI
+        // appear configured while payments use another merchant.
         return $default;
     }
 
@@ -473,6 +501,7 @@ class DriverPaymentController extends Controller
         return [
             'reference' => $gateway->reference,
             'purpose' => $gateway->purpose,
+            'environment' => $gateway->environment,
             'amount' => (float) $gateway->amount,
             'minimum_amount' => (float) $gateway->minimum_amount,
             'currency' => $gateway->currency,

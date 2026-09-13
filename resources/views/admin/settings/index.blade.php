@@ -64,44 +64,120 @@
                         <span class="material-symbols-outlined me-2" style="vertical-align: middle;">account_balance</span>
                         OPay Payment Gateway
                     </h4>
-                    <p class="text-muted mb-4">Configure live driver wallet funding and remittance checkout without editing the server environment.</p>
+                    <p class="text-muted mb-4">Control the OPay Cashier experience from here. Switching environments changes the OPay account and endpoint used for new checkouts; the driver app does not need to be rebuilt.</p>
 
                     @php
                         $opaySettings = $settings->get('payment', collect())->keyBy('key');
-                        $opayFields = [
-                            'opay_public_key' => ['label' => 'Public key', 'type' => 'text'],
-                            'opay_secret_key' => ['label' => 'Secret key', 'type' => 'password'],
-                            'opay_merchant_id' => ['label' => 'Merchant ID', 'type' => 'text'],
-                            'opay_base_url' => ['label' => 'API base URL', 'type' => 'url'],
+                        $opayCommonFields = [
+                            'opay_display_name' => ['label' => 'Merchant display name', 'type' => 'text'],
                             'opay_country' => ['label' => 'Country code', 'type' => 'text'],
                             'opay_currency' => ['label' => 'Currency', 'type' => 'text'],
                             'opay_return_url' => ['label' => 'Return URL', 'type' => 'url'],
                             'opay_cancel_url' => ['label' => 'Cancel URL', 'type' => 'url'],
                             'opay_callback_url' => ['label' => 'Callback URL', 'type' => 'url'],
                         ];
+                        $opayEnvironmentFields = [
+                            'live' => [
+                                'title' => 'Live credentials',
+                                'subtitle' => 'Real OPay payments. Use your production merchant credentials.',
+                                'fields' => [
+                                    'opay_live_public_key' => ['label' => 'Public key', 'type' => 'text'],
+                                    'opay_live_secret_key' => ['label' => 'Secret key', 'type' => 'password'],
+                                    'opay_live_merchant_id' => ['label' => 'Merchant ID', 'type' => 'text'],
+                                    'opay_live_base_url' => ['label' => 'API base URL', 'type' => 'url'],
+                                ],
+                            ],
+                            'demo' => [
+                                'title' => 'Demo / sandbox credentials',
+                                'subtitle' => 'Test payments only. Use credentials created for the OPay staging environment.',
+                                'fields' => [
+                                    'opay_demo_public_key' => ['label' => 'Public key', 'type' => 'text'],
+                                    'opay_demo_secret_key' => ['label' => 'Secret key', 'type' => 'password'],
+                                    'opay_demo_merchant_id' => ['label' => 'Merchant ID', 'type' => 'text'],
+                                    'opay_demo_base_url' => ['label' => 'API base URL', 'type' => 'url'],
+                                ],
+                            ],
+                        ];
                     @endphp
 
-                    @foreach($opayFields as $key => $field)
-                        @php
-                            $setting = $opaySettings->get($key);
-                        @endphp
-                        @if($setting)
-                            <div class="mb-3">
-                                <label for="{{ $key }}" class="form-label fw-semibold">{{ $field['label'] }}</label>
-                                <input type="{{ $field['type'] }}"
-                                       class="form-control"
-                                       id="{{ $key }}"
-                                       name="settings[{{ $key }}]"
-                                       value="{{ $field['type'] === 'password' ? '' : old('settings.' . $key, $setting->value) }}"
-                                       placeholder="{{ $field['type'] === 'password' ? ($setting->value ? 'Configured — leave blank to keep it' : 'Enter secret key') : '' }}"
-                                       {{ $field['type'] === 'url' ? 'inputmode=url' : '' }}>
-                                <small class="text-muted">{{ $setting->description }}</small>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            @php $environment = $opaySettings->get('opay_environment'); @endphp
+                            @if($environment)
+                                <label for="opay_environment" class="form-label fw-semibold">Checkout environment</label>
+                                <select class="form-select" id="opay_environment" name="settings[opay_environment]">
+                                    <option value="live" @selected(old('settings.opay_environment', $environment->value) === 'live')>Live - real payments</option>
+                                    <option value="demo" @selected(old('settings.opay_environment', $environment->value) === 'demo')>Demo - sandbox payments</option>
+                                </select>
+                                <small class="text-muted">Only new checkouts use this selection. Existing payments keep the environment used when they were created.</small>
+                            @endif
+                        </div>
+                        <div class="col-md-6">
+                            @php $enabled = $settings->get('boolean', collect())->firstWhere('key', 'opay_enabled'); @endphp
+                            @if($enabled)
+                                <label for="opay_enabled" class="form-label fw-semibold">OPay checkout status</label>
+                                <select class="form-select" id="opay_enabled" name="settings[opay_enabled]">
+                                    <option value="1" @selected((string) old('settings.opay_enabled', $enabled->value) === '1')>Enabled</option>
+                                    <option value="0" @selected((string) old('settings.opay_enabled', $enabled->value) === '0')>Disabled</option>
+                                </select>
+                                <small class="text-muted">Disable this to pause new driver payments without removing credentials.</small>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        @foreach($opayCommonFields as $key => $field)
+                            @php $setting = $opaySettings->get($key); @endphp
+                            @if($setting)
+                                <div class="col-md-6">
+                                    <label for="{{ $key }}" class="form-label fw-semibold">{{ $field['label'] }}</label>
+                                    <input type="{{ $field['type'] }}"
+                                           class="form-control"
+                                           id="{{ $key }}"
+                                           name="settings[{{ $key }}]"
+                                           value="{{ old('settings.' . $key, $setting->value) }}"
+                                           {{ $field['type'] === 'url' ? 'inputmode=url' : '' }}>
+                                    <small class="text-muted">{{ $setting->description }}</small>
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+
+                    @foreach($opayEnvironmentFields as $environmentKey => $environmentGroup)
+                        <div class="border rounded-3 p-3 mb-3">
+                            <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                                <div>
+                                    <h6 class="mb-1">{{ $environmentGroup['title'] }}</h6>
+                                    <small class="text-muted">{{ $environmentGroup['subtitle'] }}</small>
+                                </div>
+                                <span class="badge {{ $environmentKey === 'live' ? 'text-bg-success' : 'text-bg-warning' }}">
+                                    {{ strtoupper($environmentKey) }}
+                                </span>
                             </div>
-                        @endif
+                            <div class="row g-3">
+                                @foreach($environmentGroup['fields'] as $key => $field)
+                                    @php $setting = $opaySettings->get($key); @endphp
+                                    @if($setting)
+                                        <div class="col-md-6">
+                                            <label for="{{ $key }}" class="form-label fw-semibold">{{ $field['label'] }}</label>
+                                            <input type="{{ $field['type'] }}"
+                                                   class="form-control"
+                                                   id="{{ $key }}"
+                                                   name="settings[{{ $key }}]"
+                                                   value="{{ $field['type'] === 'password' ? '' : old('settings.' . $key, $setting->value) }}"
+                                                   placeholder="{{ $field['type'] === 'password' ? ($setting->value ? 'Configured - leave blank to keep it' : 'Enter secret key') : '' }}"
+                                                   autocomplete="{{ $field['type'] === 'password' ? 'new-password' : 'off' }}"
+                                                   {{ $field['type'] === 'url' ? 'inputmode=url' : '' }}>
+                                            <small class="text-muted">{{ $setting->description }}</small>
+                                        </div>
+                                    @endif
+                                @endforeach
+                            </div>
+                        </div>
                     @endforeach
 
                     <div class="alert alert-info mb-0">
-                        <strong>Security:</strong> Secret keys are stored server-side and are never sent to the driver app.
+                        <strong>Security:</strong> Secret keys are stored server-side and are never sent to the driver app. Demo and live credentials are kept separately.
                     </div>
                 </div>
             </div>
@@ -154,6 +230,7 @@
                     @endphp
 
                     @foreach($booleanSettings as $setting)
+                    @if($setting->key !== 'opay_enabled')
                     <div class="mb-3">
                         <div class="form-check form-switch">
                             <input type="hidden" name="settings[{{ $setting->key }}]" value="0">
@@ -172,6 +249,7 @@
                         <small class="text-muted d-block ms-5">{{ $setting->description }}</small>
                         @endif
                     </div>
+                    @endif
                     @endforeach
                 </div>
             </div>

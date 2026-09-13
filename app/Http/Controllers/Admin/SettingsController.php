@@ -32,7 +32,7 @@ class SettingsController extends Controller
                 if ($setting) {
                     // Secrets are intentionally write-only in the admin UI.
                     // An empty secret field means "keep the current value".
-                    if ($setting->key === 'opay_secret_key' && blank($value)) {
+                    if (str_ends_with($setting->key, '_secret_key') && blank($value)) {
                         continue;
                     }
                     $setting->update(['value' => $value ?? '']);
