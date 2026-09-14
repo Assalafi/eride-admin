@@ -8,11 +8,13 @@ class PaymentSegments extends StatelessWidget {
     super.key,
     required this.selected,
     required this.pendingCount,
+    required this.opayCount,
     required this.onChanged,
   });
 
   final int selected;
   final int pendingCount;
+  final int opayCount;
   final ValueChanged<int> onChanged;
 
   @override
@@ -34,9 +36,14 @@ class PaymentSegments extends StatelessWidget {
             onTap: () => onChanged(1),
           ),
           _SegmentButton(
-            label: 'All activity',
+            label: 'OPay ($opayCount)',
             selected: selected == 2,
             onTap: () => onChanged(2),
+          ),
+          _SegmentButton(
+            label: 'All activity',
+            selected: selected == 3,
+            onTap: () => onChanged(3),
           ),
         ]),
       );

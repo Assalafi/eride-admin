@@ -39,6 +39,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // New driver app payments. Legacy proof-upload routes remain unchanged below.
         Route::post('/payments/opay/checkout', [DriverPaymentController::class, 'checkout']);
+        Route::get('/payments/opay', [DriverPaymentController::class, 'history']);
+        Route::post('/payments/opay/{reference}/verify', [DriverPaymentController::class, 'verify']);
         Route::get('/payments/opay/{reference}', [DriverPaymentController::class, 'status']);
         
         // Daily Remittance

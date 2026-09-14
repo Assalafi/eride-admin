@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\DriverController;
 use App\Http\Controllers\Admin\MaintenanceRequestController;
 use App\Http\Controllers\Admin\PartController;
 use App\Http\Controllers\Admin\PaymentController;
+use App\Http\Controllers\Admin\OpayPaymentController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController;
@@ -80,6 +81,8 @@ Route::middleware(['auth'])->group(function () {
     // Payment Management
     Route::middleware(['permission:view payments'])->group(function () {
         Route::get('admin/payments', [PaymentController::class, 'index'])->name('admin.payments.index');
+        Route::get('admin/payments/opay', [OpayPaymentController::class, 'index'])->name('admin.payments.opay.index');
+        Route::post('admin/payments/opay/{payment}/verify', [OpayPaymentController::class, 'verify'])->name('admin.payments.opay.verify');
         
         Route::middleware(['permission:approve payments'])->group(function () {
             Route::post('admin/payments/{transaction}/approve', [PaymentController::class, 'approve'])->name('admin.payments.approve');

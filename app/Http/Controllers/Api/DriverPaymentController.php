@@ -210,10 +210,30 @@ class DriverPaymentController extends Controller
         }
     }
 
-    public function status(Request $request, string $reference)
+    public function history(Request $request)
     {
         $driver = Driver::where('user_id', $request->user()->id)->first();
-        $gateway = PaymentGatewayTransaction::where('driver_id', $driver?->id)
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'Driver profile not found'], 404);
+        }
+
+        $limit = min(max((int) $request->query('limit', 100), 1), 100);
+        $payments = PaymentGatewayTransaction::where('gateway', 'opay')
+            ->where('driver_id', $driver->id)
+            ->latest()
+            ->limit($limit)
+            ->get()
+            ->map(fn (PaymentGatewayTransaction $gateway) => $this->serializeGateway($gateway))
+            ->values();
+
+        return response()->json(['success' => true, 'data' => $payments]);
+    }
+
+    public function verify(Request $request, string $reference)
+    {
+        $driver = Driver::where('user_id', $request->user()->id)->first();
+        $gateway = PaymentGatewayTransaction::where('gateway', 'opay')
+            ->where('driver_id', $driver?->id)
             ->where('reference', $reference)
             ->first();
 
@@ -221,17 +241,76 @@ class DriverPaymentController extends Controller
             return response()->json(['success' => false, 'message' => 'Payment not found'], 404);
         }
 
-        if (!in_array($gateway->status, ['SUCCESS', 'FAIL', 'CLOSE'], true)) {
-            $response = $this->opayStatus($gateway);
-            if ($response->successful() && $response->json('code') === '00000') {
-                $status = $response->json('data.status');
-                $gateway->update(['gateway_response' => $response->json()]);
-                $this->applyStatus($gateway->fresh(), $status, $response->json('data'));
-                $gateway->refresh();
+        $result = $this->verifyGateway($gateway);
+        return response()->json($result, $result['success'] ? 200 : 502);
+    }
+
+    public function status(Request $request, string $reference)
+    {
+        $driver = Driver::where('user_id', $request->user()->id)->first();
+        $gateway = PaymentGatewayTransaction::where('gateway', 'opay')
+            ->where('driver_id', $driver?->id)
+            ->where('reference', $reference)
+            ->first();
+
+        if (!$gateway) {
+            return response()->json(['success' => false, 'message' => 'Payment not found'], 404);
+        }
+
+        if (in_array($gateway->status, ['INITIAL', 'PENDING'], true)) {
+            $result = $this->verifyGateway($gateway);
+            if ($result['success']) {
+                return response()->json($result);
             }
         }
 
         return response()->json(['success' => true, 'data' => $this->serializeGateway($gateway->fresh())]);
+    }
+
+    /**
+     * Ask OPay for the current status, including for locally failed or closed
+     * payments. This is shared by the driver app and the admin verification
+     * action so both parties use exactly the same settlement rules.
+     */
+    public function verifyGateway(PaymentGatewayTransaction $gateway): array
+    {
+        try {
+            $response = $this->opayStatus($gateway);
+            if (!$response->successful() || $response->json('code') !== '00000') {
+                return [
+                    'success' => false,
+                    'message' => $response->json('message', 'OPay status verification failed.'),
+                    'data' => $this->serializeGateway($gateway->fresh()),
+                ];
+            }
+
+            $opayData = $response->json('data', []);
+            $gateway->update([
+                'gateway_order_no' => $opayData['orderNo'] ?? $gateway->gateway_order_no,
+                'gateway_transaction_id' => $opayData['transactionId'] ?? $gateway->gateway_transaction_id,
+                'gateway_response' => $response->json(),
+            ]);
+            $this->applyStatus(
+                $gateway->fresh(),
+                strtoupper((string) ($opayData['status'] ?? '')),
+                is_array($opayData) ? $opayData : [],
+                $response->json(),
+            );
+
+            $fresh = $gateway->fresh();
+            return [
+                'success' => true,
+                'message' => 'Payment status verified with OPay.',
+                'data' => $this->serializeGateway($fresh),
+            ];
+        } catch (\Throwable $exception) {
+            report($exception);
+            return [
+                'success' => false,
+                'message' => 'Unable to verify this payment with OPay right now.',
+                'data' => $this->serializeGateway($gateway->fresh()),
+            ];
+        }
     }
 
     public function callback(Request $request)
@@ -420,6 +499,12 @@ class DriverPaymentController extends Controller
                 return;
             }
 
+            // A confirmed payment must not be downgraded by a delayed or
+            // inconsistent status response from a later verification attempt.
+            if ($locked->status === 'SUCCESS' && $mapped !== 'SUCCESS') {
+                $mapped = 'SUCCESS';
+            }
+
             $update = [
                 'status' => $mapped,
                 'gateway_transaction_id' => $payload['transactionId'] ?? $locked->gateway_transaction_id,
@@ -510,6 +595,8 @@ class DriverPaymentController extends Controller
 
     private function serializeGateway(PaymentGatewayTransaction $gateway): array
     {
+        $opayStatus = data_get($gateway->gateway_response, 'data.status');
+
         return [
             'reference' => $gateway->reference,
             'purpose' => $gateway->purpose,
@@ -518,6 +605,9 @@ class DriverPaymentController extends Controller
             'minimum_amount' => (float) $gateway->minimum_amount,
             'currency' => $gateway->currency,
             'status' => strtolower($gateway->status),
+            'opay_status' => $opayStatus ? strtolower((string) $opayStatus) : strtolower($gateway->status),
+            'gateway_order_no' => $gateway->gateway_order_no,
+            'gateway_transaction_id' => $gateway->gateway_transaction_id,
             'checkout_url' => $gateway->checkout_url,
             'transaction_id' => $gateway->transaction_id,
             'wallet_funding_request_id' => $gateway->wallet_funding_request_id,

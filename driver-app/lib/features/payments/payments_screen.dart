@@ -13,6 +13,7 @@ import 'opay/opay_checkout_page.dart';
 import 'payment_amount_sheet.dart';
 import 'widgets/payment_segments.dart';
 import 'widgets/payments_header.dart';
+import 'widgets/opay_payment_history.dart';
 import 'widgets/remittance_list.dart';
 import 'widgets/transaction_history.dart';
 
@@ -27,6 +28,7 @@ class PaymentsScreen extends StatefulWidget {
 class _PaymentsScreenState extends State<PaymentsScreen> {
   late Future<List<Map<String, dynamic>>> _future;
   bool _startingPayment = false;
+  String? _verifyingOpayReference;
 
   @override
   void initState() {
@@ -38,6 +40,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         ApiClient.instance.get('driver/dashboard'),
         ApiClient.instance.get('driver/remittance/all'),
         ApiClient.instance.get('driver/transactions'),
+        ApiClient.instance.get('driver/payments/opay?limit=100'),
       ]);
 
   Future<void> _refresh() async {
@@ -68,6 +71,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         final summary = asMap(dashboard['remittance_summary']);
         final allRemittances = asList(snapshot.data![1]['data']);
         final transactions = asList(snapshot.data![2]['data']);
+        final opayPayments = asList(snapshot.data![3]['data']);
 
         final pending = allRemittances.where((item) {
           final status = (asMap(item)['status'] ?? '').toString().toLowerCase();
@@ -97,6 +101,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             PaymentSegments(
               selected: segment,
               pendingCount: pending.length,
+              opayCount: opayPayments.length,
               onChanged: controller.setPaymentsSegment,
             ),
             const SizedBox(height: 16),
@@ -118,6 +123,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                 items: history,
                 emptyTitle: 'No payment history',
                 emptyMessage: 'Completed remittances will appear here.',
+              )
+            else if (segment == 2)
+              OpayPaymentHistory(
+                items: opayPayments,
+                verifyingReference: _verifyingOpayReference,
+                onVerify: _verifyOpayPayment,
               )
             else
               TransactionHistory(items: transactions),
@@ -218,6 +229,34 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       }
     } finally {
       if (mounted) setState(() => _startingPayment = false);
+    }
+  }
+
+  Future<void> _verifyOpayPayment(Map<String, dynamic> item) async {
+    final reference = item['reference']?.toString() ?? '';
+    if (reference.isEmpty) return;
+
+    setState(() => _verifyingOpayReference = reference);
+    try {
+      final response = await ApiClient.instance.post(
+        'driver/payments/opay/${Uri.encodeComponent(reference)}/verify',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(response['message']?.toString() ??
+                  'Payment status checked.')),
+        );
+      }
+      await _refresh();
+    } on ApiException catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(exception.message)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _verifyingOpayReference = null);
     }
   }
 }

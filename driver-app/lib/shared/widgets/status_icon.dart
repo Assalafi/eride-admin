@@ -11,9 +11,16 @@ class StatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalized = status.toLowerCase();
-    final good =
-        ['paid', 'successful', 'approved', 'completed'].contains(normalized);
-    final rejected = normalized == 'rejected' || normalized == 'failed';
+    final good = ['paid', 'success', 'successful', 'approved', 'completed']
+        .contains(normalized);
+    final rejected = [
+      'rejected',
+      'failed',
+      'fail',
+      'close',
+      'closed',
+      'cancelled',
+    ].contains(normalized);
     final color = good
         ? AppColors.success
         : rejected

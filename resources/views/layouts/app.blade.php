@@ -145,6 +145,12 @@
                                 <span class="title">Payments</span>
                             </a>
                         </li>
+                        <li class="menu-item {{ request()->routeIs('admin.payments.opay.*') ? 'active' : '' }}">
+                            <a href="{{ route('admin.payments.opay.index') }}" class="menu-link">
+                                <span class="material-symbols-outlined menu-icon">sync_alt</span>
+                                <span class="title">OPay Payments</span>
+                            </a>
+                        </li>
                     @endcan
 
                     @can('view hire purchase')
