@@ -50,8 +50,9 @@ class OpayPaymentController extends Controller
             ->when(!$user->hasRole(['Super Admin', 'Accountant']), function ($q) use ($user) {
                 BranchAccessService::applyBranchFilter($q, $user);
             })
-            ->orderBy('full_name')
-            ->get(['id', 'full_name']);
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get(['id', 'first_name', 'last_name']);
 
         return view('admin.payments.opay', compact(
             'payments',
