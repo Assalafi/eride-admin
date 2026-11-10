@@ -28,6 +28,7 @@ class User extends Authenticatable
         'email',
         'password',
         'branch_id',
+        'preferences',
     ];
 
     /**
@@ -50,7 +51,25 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'preferences' => 'array',
         ];
+    }
+
+    /**
+     * Read a preference belonging only to this user.
+     */
+    public function getPreference(string $key, mixed $default = null): mixed
+    {
+        return data_get($this->preferences ?? [], $key, $default);
+    }
+
+    /**
+     * Update one or more user preferences without touching system settings.
+     */
+    public function setPreferences(array $preferences): void
+    {
+        $this->preferences = array_replace($this->preferences ?? [], $preferences);
+        $this->save();
     }
 
     /**

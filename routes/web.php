@@ -261,6 +261,10 @@ Route::middleware(['auth'])->group(function () {
         'destroy' => 'admin.branches.destroy',
     ]);
     
+    // Personal and system settings
+    Route::get('admin/settings', [SettingsController::class, 'index'])->name('admin.settings.index');
+    Route::put('admin/settings', [SettingsController::class, 'update'])->name('admin.settings.update');
+
     // User Management (Admin only)
     Route::middleware(['role:Super Admin'])->group(function () {
         Route::resource('admin/users', UserController::class)->names([
@@ -290,8 +294,5 @@ Route::middleware(['auth'])->group(function () {
         // Role Statistics
         Route::get('admin/roles/stats', [RoleController::class, 'stats'])->name('admin.roles.stats');
         
-        // System Settings
-        Route::get('admin/settings', [SettingsController::class, 'index'])->name('admin.settings.index');
-        Route::put('admin/settings', [SettingsController::class, 'update'])->name('admin.settings.update');
     });
 });

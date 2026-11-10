@@ -11,18 +11,47 @@ class SettingsController extends Controller
 {
     public function index()
     {
-        $settings = SystemSetting::all()->groupBy('type');
-        
-        return view('admin.settings.index', compact('settings'));
+        $user = auth()->user();
+        $canManageSystemSettings = $user->hasRole('Super Admin');
+        $settings = $canManageSystemSettings
+            ? SystemSetting::all()->groupBy('type')
+            : collect();
+
+        return view('admin.settings.index', [
+            'settings' => $settings,
+            'canManageSystemSettings' => $canManageSystemSettings,
+            'userPreferences' => [
+                'theme' => $user->getPreference('theme', 'system'),
+                'pagination_per_page' => (string) $user->getPreference('pagination_per_page', 20),
+            ],
+        ]);
     }
 
     public function update(Request $request)
     {
         $request->validate([
             'settings' => 'nullable|array',
+            'preferences' => 'nullable|array',
+            'preferences.theme' => 'nullable|in:light,dark,system',
+            'preferences.pagination_per_page' => 'nullable|in:10,20,25,50,100,all',
             'logo' => 'nullable|image|mimes:jpeg,png,jpg,svg|max:2048',
             'favicon' => 'nullable|image|mimes:jpeg,png,jpg,ico|max:1024',
         ]);
+
+        $user = auth()->user();
+        $preferences = $request->input('preferences', []);
+        if ($preferences) {
+            $user->setPreferences([
+                'theme' => $preferences['theme'] ?? $user->getPreference('theme', 'system'),
+                'pagination_per_page' => $preferences['pagination_per_page'] ?? $user->getPreference('pagination_per_page', 20),
+            ]);
+        }
+
+        // System-wide settings and branding are restricted to Super Admins.
+        if (!$user->hasRole('Super Admin')) {
+            return redirect()->route('admin.settings.index')
+                ->with('success', 'Your workspace preferences were updated successfully.');
+        }
 
         // Update regular settings
         if ($request->has('settings')) {

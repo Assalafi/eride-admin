@@ -33,7 +33,7 @@ class MaintenanceRequestController extends Controller
         // Get date range
         [$start, $end] = $this->getDateRange($timeFilter, $startDate, $endDate);
 
-        $requests = MaintenanceRequest::with(['driver', 'mechanic', 'approver', 'parts'])
+        $requests = paginate_for_user(MaintenanceRequest::with(['driver', 'mechanic', 'approver', 'parts'])
             ->when(!$user->hasRole('Super Admin'), function ($query) use ($user) {
                 BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
             })
@@ -46,9 +46,7 @@ class MaintenanceRequestController extends Controller
             ->when($driverId, function ($query) use ($driverId) {
                 $query->where('driver_id', $driverId);
             })
-            ->latest()
-            ->paginate(20)
-            ->withQueryString();
+            ->latest(), 20);
 
         // Get drivers for filter
         $drivers = Driver::when(!$user->hasRole('Super Admin'), function ($query) use ($user) {

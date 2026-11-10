@@ -18,11 +18,10 @@ class DriverController extends Controller
     {
         $user = auth()->user();
         
-        $drivers = Driver::with(['user', 'branch'])
+        $drivers = paginate_for_user(Driver::with(['user', 'branch'])
             ->when(!$user->hasRole('Super Admin'), function ($query) use ($user) {
                 BranchAccessService::applyBranchFilter($query, $user);
-            })
-            ->paginate(20);
+            }), 20);
 
         return view('admin.drivers.index', compact('drivers'));
     }

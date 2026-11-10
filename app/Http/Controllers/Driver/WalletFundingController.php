@@ -13,10 +13,12 @@ class WalletFundingController extends Controller
     {
         $driver = auth()->user()->driver;
         
-        $requests = WalletFundingRequest::where('driver_id', $driver->id)
-            ->with('approver')
-            ->latest()
-            ->paginate(20);
+        $requests = paginate_for_user(
+            WalletFundingRequest::where('driver_id', $driver->id)
+                ->with('approver')
+                ->latest(),
+            20
+        );
 
         return view('driver.wallet-funding.index', compact('requests', 'driver'));
     }

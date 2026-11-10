@@ -210,7 +210,7 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 })
                 ->latest();
                 
-            $chargingRequests = $chargingRequestsQuery->paginate(20)->withQueryString();
+            $chargingRequests = paginate_for_user($chargingRequestsQuery, 20);
             
             // Transform charging requests to look like transactions for the view
             $transactions = $chargingRequests->getCollection()->map(function ($request) {
@@ -240,9 +240,7 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 ['path' => request()->url(), 'query' => request()->query()]
             );
         } else {
-            $transactions = $baseQuery->latest()
-                ->paginate(20)
-                ->withQueryString();
+            $transactions = paginate_for_user($baseQuery->latest(), 20);
         }
 
         // Get drivers for filter

@@ -45,7 +45,7 @@ class OpayPaymentController extends Controller
             'amount' => (float) (clone $summaryQuery)->where('status', 'SUCCESS')->sum('amount'),
         ];
 
-        $payments = $query->latest()->paginate(25)->withQueryString();
+        $payments = paginate_for_user($query->latest(), 20);
         $drivers = Driver::query()
             ->when(!$user->hasRole(['Super Admin', 'Accountant']), function ($q) use ($user) {
                 BranchAccessService::applyBranchFilter($q, $user);

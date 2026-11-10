@@ -33,7 +33,7 @@ class ChargingRequestController extends Controller
         // Get date range
         [$start, $end] = $this->getDateRange($timeFilter, $startDate, $endDate);
 
-        $chargingRequests = ChargingRequest::with(['driver', 'vehicle', 'approver'])
+        $chargingRequests = paginate_for_user(ChargingRequest::with(['driver', 'vehicle', 'approver'])
             ->when(!$user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($user) {
                 BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
             })
@@ -50,9 +50,7 @@ class ChargingRequestController extends Controller
             ->when($driverId, function ($query) use ($driverId) {
                 $query->where('driver_id', $driverId);
             })
-            ->latest()
-            ->paginate(20)
-            ->withQueryString();
+            ->latest(), 20);
 
         // Statistics with date filter
         $statsQuery = ChargingRequest::query()

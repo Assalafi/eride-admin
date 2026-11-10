@@ -56,7 +56,7 @@ class CompanyAccountController extends Controller
             })
             ->latest('transaction_date');
 
-        $transactions = $query->paginate(20)->withQueryString();
+        $transactions = paginate_for_user($query, 20);
 
         // Calculate statistics for current filter
         $stats = $this->calculateStats($start, $end, $branchId, $user);

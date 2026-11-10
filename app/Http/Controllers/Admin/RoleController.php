@@ -15,9 +15,7 @@ class RoleController extends Controller
      */
     public function index()
     {
-        $roles = Role::withCount('users')
-            ->orderBy('name')
-            ->paginate(20);
+        $roles = paginate_for_user(Role::withCount('users')->orderBy('name'), 20);
 
         return view('admin.roles.index', compact('roles'));
     }
@@ -205,7 +203,7 @@ class RoleController extends Controller
      */
     public function users(Role $role)
     {
-        $users = $role->users()->with('branch')->paginate(20);
+        $users = paginate_for_user($role->users()->with('branch'), 20);
         
         return view('admin.roles.users', compact('role', 'users'));
     }

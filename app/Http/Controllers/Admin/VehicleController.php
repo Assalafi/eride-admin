@@ -14,11 +14,10 @@ class VehicleController extends Controller
     {
         $user = auth()->user();
         
-        $vehicles = Vehicle::with('branch')
+        $vehicles = paginate_for_user(Vehicle::with('branch')
             ->when(!$user->hasRole('Super Admin'), function ($query) use ($user) {
                 BranchAccessService::applyBranchFilter($query, $user);
-            })
-            ->paginate(20);
+            }), 20);
 
         return view('admin.vehicles.index', compact('vehicles'));
     }

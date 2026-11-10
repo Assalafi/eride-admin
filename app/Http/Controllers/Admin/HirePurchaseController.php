@@ -59,7 +59,7 @@ class HirePurchaseController extends Controller
         }
 
         // Get contracts with pagination
-        $contracts = $query->latest()->paginate(20)->withQueryString();
+        $contracts = paginate_for_user($query->latest(), 20);
 
         // Get summary statistics
         $statsQuery = HirePurchaseContract::query()

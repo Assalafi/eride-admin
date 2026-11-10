@@ -19,11 +19,11 @@ class PartController extends Controller
         $user = auth()->user();
         
         $branchIds = BranchAccessService::getUserBranchIds($user);
-        $parts = Part::with(['branch', 'stock' => function ($query) use ($user, $branchIds) {
+        $parts = paginate_for_user(Part::with(['branch', 'stock' => function ($query) use ($user, $branchIds) {
             if (!$user->hasRole(['Super Admin', 'Accountant'])) {
                 $query->whereIn('branch_id', $branchIds);
             }
-        }])->paginate(20);
+        }]), 20);
 
         // Calculate statistics
         $totalParts = Part::count();
@@ -123,10 +123,12 @@ class PartController extends Controller
             ->sum('maintenance_request_parts.quantity');
         
         // Get stock history
-        $stockHistory = PartStockHistory::where('part_id', $part->id)
-            ->with(['branch', 'user'])
-            ->latest()
-            ->paginate(20);
+        $stockHistory = paginate_for_user(
+            PartStockHistory::where('part_id', $part->id)
+                ->with(['branch', 'user'])
+                ->latest(),
+            20
+        );
         
         return view('admin.parts.show', compact('part', 'allStock', 'totalStock', 'maintenanceHistory', 'totalUsed', 'stockHistory'));
     }

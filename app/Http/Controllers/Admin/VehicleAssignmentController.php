@@ -33,7 +33,7 @@ class VehicleAssignmentController extends Controller
         ];
         
         // Filter based on tab
-        $assignments = (clone $baseQuery)
+        $assignments = paginate_for_user((clone $baseQuery)
             ->when($tab === 'active', function ($query) {
                 $query->whereNull('returned_at');
             })
@@ -46,9 +46,7 @@ class VehicleAssignmentController extends Controller
             ->when($tab === 'week', function ($query) {
                 $query->whereBetween('assigned_at', [now()->startOfWeek(), now()->endOfWeek()]);
             })
-            ->latest('assigned_at')
-            ->paginate(20)
-            ->appends(['tab' => $tab]);
+            ->latest('assigned_at'), 20)->appends(['tab' => $tab]);
 
         return view('admin.assignments.index', compact('assignments', 'stats', 'tab'));
     }

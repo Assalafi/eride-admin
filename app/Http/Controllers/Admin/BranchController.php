@@ -10,8 +10,10 @@ class BranchController extends Controller
 {
     public function index()
     {
-        $branches = Branch::withCount(['drivers', 'vehicles', 'users'])
-            ->paginate(15);
+        $branches = paginate_for_user(
+            Branch::withCount(['drivers', 'vehicles', 'users']),
+            20
+        );
 
         return view('admin.branches.index', compact('branches'));
     }

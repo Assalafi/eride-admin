@@ -1,10 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+@php
+    $themePreference = auth()->check() ? auth()->user()->getPreference('theme', 'system') : 'system';
+@endphp
+<html lang="en" data-theme-preference="{{ $themePreference }}">
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    <script>
+        (function () {
+            const root = document.documentElement;
+            const preference = @json($themePreference);
+            const resolved = preference === 'system'
+                ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : preference;
+            root.setAttribute('data-bs-theme', resolved);
+        })();
+    </script>
 
     <!-- Links Of CSS File -->
     <link rel="stylesheet" href="{{ asset('assets/css/sidebar-menu.css') }}">
@@ -16,6 +30,7 @@
     <link rel="stylesheet" href="{{ asset('assets/css/google-icon.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/remixicon.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/style.css') }}">
+    <link rel="stylesheet" href="{{ asset('assets/css/admin-theme.css') }}">
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{{ app_favicon() }}">
@@ -257,13 +272,14 @@
                             </a>
                         </li>
 
-                        <li class="menu-item {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">
-                            <a href="{{ route('admin.settings.index') }}" class="menu-link">
-                                <span class="material-symbols-outlined menu-icon">settings</span>
-                                <span class="title">Settings</span>
-                            </a>
-                        </li>
                     @endrole
+
+                    <li class="menu-item {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.settings.index') }}" class="menu-link">
+                            <span class="material-symbols-outlined menu-icon">settings</span>
+                            <span class="title">Settings</span>
+                        </a>
+                    </li>
 
                     <li class="menu-title small text-uppercase">
                         <span class="menu-title-text">ACCOUNT</span>
@@ -318,6 +334,12 @@
                             <div class="right-header-content mt-2 mt-sm-0">
                                 <ul
                                     class="d-flex align-items-center justify-content-center justify-content-sm-end ps-0 mb-0 list-unstyled">
+                                    <li class="header-right-item">
+                                        <button type="button" class="theme-toggle" id="theme-toggle"
+                                                aria-label="Toggle dark mode" title="Toggle dark mode">
+                                            <span class="material-symbols-outlined" data-theme-icon>dark_mode</span>
+                                        </button>
+                                    </li>
                                     <li class="header-right-item">
                                         <div class="dropdown notifications noti">
                                             <button class="btn btn-secondary border-0 p-0 position-relative badge"
@@ -446,6 +468,45 @@
     <script>
         // Initialize Feather Icons
         feather.replace();
+    </script>
+
+    <script>
+        (function () {
+            const root = document.documentElement;
+            const toggle = document.getElementById('theme-toggle');
+            const icon = toggle?.querySelector('[data-theme-icon]');
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+            function applyTheme(theme) {
+                root.setAttribute('data-bs-theme', theme);
+                if (icon) {
+                    icon.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
+                }
+            }
+
+            applyTheme(root.getAttribute('data-bs-theme') || 'light');
+
+            toggle?.addEventListener('click', function () {
+                const nextTheme = root.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+                applyTheme(nextTheme);
+                root.dataset.themePreference = nextTheme;
+
+                if (!csrf) return;
+
+                const formData = new FormData();
+                formData.append('_token', csrf);
+                formData.append('_method', 'PUT');
+                formData.append('preferences[theme]', nextTheme);
+
+                fetch('{{ route('admin.settings.update') }}', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                }).catch(function () {
+                    // Keep the instant UI change even if a background preference save fails.
+                });
+            });
+        })();
     </script>
 
     @stack('scripts')

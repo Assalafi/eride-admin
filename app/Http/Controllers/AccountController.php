@@ -184,7 +184,7 @@ class AccountController extends Controller
             $query->where('branch_id', Auth::user()->branch_id);
         }
 
-        $requests = $query->orderBy('created_at', 'desc')->paginate(20);
+        $requests = paginate_for_user($query->orderBy('created_at', 'desc'), 20);
         $threshold = SystemSetting::where('key', 'debit_approval_threshold')->first()?->value ?? 100000;
 
         return view('accounts.debit-requests', compact('requests', 'threshold'));
@@ -332,9 +332,10 @@ class AccountController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        $transactions = $query->orderBy('transaction_date', 'desc')
-            ->orderBy('created_at', 'desc')
-            ->paginate(30);
+        $transactions = paginate_for_user(
+            $query->orderBy('transaction_date', 'desc')->orderBy('created_at', 'desc'),
+            20
+        );
 
         // Calculate company balance from all transactions
         $totalIncome = CompanyAccountTransaction::where('type', 'income')->sum('amount');

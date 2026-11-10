@@ -1,10 +1,13 @@
 @extends('layouts.app')
 
-@section('title', 'System Settings')
+@section('title', 'Settings')
 
 @section('content')
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-    <h3 class="mb-0">System Settings</h3>
+    <div>
+        <h3 class="mb-1">Settings</h3>
+        <p class="text-muted mb-0">Manage your workspace and keep the portal comfortable to use.</p>
+    </div>
 
     <nav style="--bs-breadcrumb-divider: '>';" aria-label="breadcrumb">
         <ol class="breadcrumb align-items-center mb-0 lh-1">
@@ -25,6 +28,75 @@
     @csrf
     @method('PUT')
 
+    <!-- Personal workspace preferences -->
+    <div class="card border-0 rounded-4 mb-4">
+        <div class="card-body p-4 p-xl-5">
+            <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-4">
+                <div>
+                    <span class="badge rounded-pill text-bg-primary mb-2">PERSONAL SETTINGS</span>
+                    <h4 class="mb-1">My workspace</h4>
+                    <p class="text-muted mb-0">These preferences belong to your account only and follow you across the portal.</p>
+                </div>
+                <span class="material-symbols-outlined text-primary" style="font-size: 34px;">tune</span>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label fw-semibold mb-2">Appearance</label>
+                <div class="row g-3">
+                    @foreach([
+                        'light' => ['label' => 'Light', 'description' => 'Bright and clear', 'icon' => 'light_mode'],
+                        'dark' => ['label' => 'Dark', 'description' => 'Comfortable in low light', 'icon' => 'dark_mode'],
+                        'system' => ['label' => 'System', 'description' => 'Follow your device', 'icon' => 'settings_suggest'],
+                    ] as $themeKey => $theme)
+                        <div class="col-md-4">
+                            <label class="theme-choice w-100" for="theme_{{ $themeKey }}">
+                                <input type="radio" name="preferences[theme]" id="theme_{{ $themeKey }}"
+                                       value="{{ $themeKey }}"
+                                       @checked(old('preferences.theme', $userPreferences['theme']) === $themeKey)>
+                                <span class="material-symbols-outlined text-primary">{{ $theme['icon'] }}</span>
+                                <span>
+                                    <strong class="d-block">{{ $theme['label'] }}</strong>
+                                    <small class="text-muted">{{ $theme['description'] }}</small>
+                                </span>
+                            </label>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-6">
+                    <label for="pagination_per_page" class="form-label fw-semibold">Rows per page</label>
+                    <select class="form-select" id="pagination_per_page" name="preferences[pagination_per_page]">
+                        @foreach([10, 20, 25, 50, 100] as $pageSize)
+                            <option value="{{ $pageSize }}" @selected((string) old('preferences.pagination_per_page', $userPreferences['pagination_per_page']) === (string) $pageSize)>
+                                {{ $pageSize }} rows
+                            </option>
+                        @endforeach
+                        <option value="all" @selected(old('preferences.pagination_per_page', $userPreferences['pagination_per_page']) === 'all')>
+                            Show all rows (no pagination)
+                        </option>
+                    </select>
+                    <small class="text-muted">This applies to every list you can access, including filtered results.</small>
+                </div>
+                <div class="col-lg-6 d-flex justify-content-lg-end">
+                    <button type="submit" class="btn btn-primary px-4">
+                        <span class="material-symbols-outlined me-2" style="vertical-align: middle;">save</span>
+                        Save my preferences
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if(!$canManageSystemSettings)
+        <div class="alert alert-info border-0 rounded-4 mb-4">
+            <span class="material-symbols-outlined me-2 align-middle">info</span>
+            System-wide branding, financial, and gateway settings are managed by Super Admin. You can still manage your personal workspace above.
+        </div>
+    @endif
+
+    @if($canManageSystemSettings)
     <div class="row">
         <!-- General Settings -->
         <div class="col-lg-8">
@@ -243,7 +315,7 @@
             <div class="d-flex gap-2">
                 <button type="submit" class="btn btn-primary">
                     <span class="material-symbols-outlined me-2" style="vertical-align: middle;">save</span>
-                    Save Settings
+                    Save system settings
                 </button>
                 <a href="{{ route('dashboard') }}" class="btn btn-secondary">
                     <span class="material-symbols-outlined me-2" style="vertical-align: middle;">cancel</span>
@@ -359,13 +431,14 @@
             </div>
         </div>
     </div>
+    @endif
 </form>
 @endsection
 
 @push('scripts')
 <script>
     // Preview logo before upload
-    document.getElementById('logo').addEventListener('change', function(e) {
+    document.getElementById('logo')?.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
             const reader = new FileReader();
@@ -388,7 +461,7 @@
     });
 
     // Preview favicon before upload
-    document.getElementById('favicon').addEventListener('change', function(e) {
+    document.getElementById('favicon')?.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
             const reader = new FileReader();

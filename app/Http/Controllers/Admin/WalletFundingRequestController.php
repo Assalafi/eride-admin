@@ -30,7 +30,7 @@ class WalletFundingRequestController extends Controller
         // Get date range
         [$start, $end] = $this->getDateRange($timeFilter, $startDate, $endDate);
 
-        $requests = WalletFundingRequest::with(['driver.branch', 'approver'])
+        $requests = paginate_for_user(WalletFundingRequest::with(['driver.branch', 'approver'])
             ->when(!$user->hasRole(['Super Admin', 'Accountant']), function ($query) use ($user) {
                 BranchAccessService::applyBranchFilterThroughRelation($query, $user, 'driver');
             })
@@ -43,9 +43,7 @@ class WalletFundingRequestController extends Controller
             ->when($driverId, function ($query) use ($driverId) {
                 $query->where('driver_id', $driverId);
             })
-            ->latest()
-            ->paginate(20)
-            ->withQueryString();
+            ->latest(), 20);
 
         // Statistics with date filter
         $statsQuery = WalletFundingRequest::query()
