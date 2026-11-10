@@ -457,6 +457,69 @@ body {
     filter: invert(1) grayscale(100%) brightness(200%);
 }
 
+/* Legacy template components with more-specific light-mode declarations. */
+[data-bs-theme="dark"] .default-table-area .table-responsive .table {
+    border-color: var(--admin-border) !important;
+}
+
+[data-bs-theme="dark"] .default-table-area .table-responsive .table thead tr th,
+[data-bs-theme="dark"] .default-table-area .table-responsive .table tbody tr td {
+    color: var(--admin-text) !important;
+    background-color: var(--admin-surface) !important;
+    border-color: var(--admin-border) !important;
+}
+
+[data-bs-theme="dark"] .default-table-area .table-responsive .table thead tr th {
+    color: var(--admin-muted) !important;
+    background-color: var(--admin-surface-soft) !important;
+}
+
+[data-bs-theme="dark"] .default-table-area .table-responsive .table tbody tr:hover td {
+    color: var(--admin-text) !important;
+    background-color: var(--admin-surface-soft) !important;
+}
+
+[data-bs-theme="dark"] .default-table-area .showing-wrap,
+[data-bs-theme="dark"] .default-table-area .asterisk,
+[data-bs-theme="dark"] .default-table-area .Selc,
+[data-bs-theme="dark"] .default-table-area #C,
+[data-bs-theme="dark"] .default-table-area #C td {
+    color: var(--admin-text) !important;
+    background-color: transparent !important;
+    border-color: var(--admin-border) !important;
+}
+
+[data-bs-theme="dark"] .default-table-area .pagination a,
+[data-bs-theme="dark"] .pagination a {
+    color: var(--admin-text) !important;
+    background-color: var(--admin-surface) !important;
+    border-color: var(--admin-border) !important;
+}
+
+[data-bs-theme="dark"] .default-table-area .pagination a:hover,
+[data-bs-theme="dark"] .pagination a:hover {
+    color: #ffffff !important;
+    background-color: var(--admin-surface-soft) !important;
+}
+
+[data-bs-theme="dark"] .main-content-container,
+[data-bs-theme="dark"] .main-content .inner-main-content {
+    color: var(--admin-text);
+}
+
+[data-bs-theme="dark"] .modal-content .form-text,
+[data-bs-theme="dark"] .modal-content small,
+[data-bs-theme="dark"] .modal-content .text-muted,
+[data-bs-theme="dark"] .modal-content .text-secondary {
+    color: var(--admin-muted) !important;
+}
+
+[data-bs-theme="dark"] .modal-content .bg-light,
+[data-bs-theme="dark"] .modal-content .bg-white {
+    background-color: var(--admin-surface-soft) !important;
+    color: var(--admin-text) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

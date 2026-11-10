@@ -30,7 +30,6 @@
     <link rel="stylesheet" href="{{ asset('assets/css/google-icon.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/remixicon.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/style.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/css/admin-theme.css') }}">
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{{ app_favicon() }}">
@@ -73,6 +72,12 @@
     </style>
 
     @stack('styles')
+
+    {{-- Keep the workspace theme last so legacy/page-specific vendor rules cannot
+         reintroduce white surfaces or dark text in dark mode. The file mtime
+         also invalidates browser caches whenever the theme changes. --}}
+    <link rel="stylesheet"
+        href="{{ asset('assets/css/admin-theme.css') }}?v={{ filemtime(public_path('assets/css/admin-theme.css')) }}">
 </head>
 
 <body class="boxed-size">
