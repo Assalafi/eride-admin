@@ -507,6 +507,17 @@ body {
     color: var(--admin-text);
 }
 
+/* Page titles sit outside cards, so give plain headings the same readable
+   contrast while preserving intentional semantic/white heading colors. */
+[data-bs-theme="dark"] .main-content-container h1:not([class*="text-"]):not([style]),
+[data-bs-theme="dark"] .main-content-container h2:not([class*="text-"]):not([style]),
+[data-bs-theme="dark"] .main-content-container h3:not([class*="text-"]):not([style]),
+[data-bs-theme="dark"] .main-content-container h4:not([class*="text-"]):not([style]),
+[data-bs-theme="dark"] .main-content-container h5:not([class*="text-"]):not([style]),
+[data-bs-theme="dark"] .main-content-container h6:not([class*="text-"]):not([style]) {
+    color: var(--admin-text) !important;
+}
+
 [data-bs-theme="dark"] .modal-content .form-text,
 [data-bs-theme="dark"] .modal-content small,
 [data-bs-theme="dark"] .modal-content .text-muted,
