@@ -38,6 +38,7 @@ class PaymentController extends Controller
         $chargingStatus = $request->get('charging_status');
         $branchId = $request->get('branch_id');
         $reference = $request->get('reference');
+        $proofStatus = $request->get('proof_status');
 
         // Get date range
         [$start, $end] = $this->getDateRange($timeFilter, $startDate, $endDate);
@@ -69,6 +70,16 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             })
             ->when($reference, function ($query) use ($reference) {
                 $query->where('reference', 'like', $reference . '%');
+            })
+            ->when($proofStatus === 'uploaded', function ($query) {
+                $query->whereNotNull('payment_proof')
+                    ->where('payment_proof', '!=', '');
+            })
+            ->when($proofStatus === 'not_uploaded', function ($query) {
+                $query->where(function ($query) {
+                    $query->whereNull('payment_proof')
+                        ->orWhere('payment_proof', '');
+                });
             });
 
         // Calculate income summaries based on filters
@@ -111,6 +122,16 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 ->when($chargingStatus, function ($query) use ($chargingStatus) {
                     $query->where('status', $chargingStatus);
                 })
+                ->when($proofStatus === 'uploaded', function ($query) {
+                    $query->whereNotNull('payment_receipt')
+                        ->where('payment_receipt', '!=', '');
+                })
+                ->when($proofStatus === 'not_uploaded', function ($query) {
+                    $query->where(function ($query) {
+                        $query->whereNull('payment_receipt')
+                            ->orWhere('payment_receipt', '');
+                    });
+                })
                 ->whereIn('status', ['approved', 'completed']);
                 
             $incomeSummary['charging'] = $chargingQuery->sum('charging_cost');
@@ -152,6 +173,16 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                     })
                     ->when($chargingStatus, function ($query) use ($chargingStatus) {
                         $query->where('status', $chargingStatus);
+                    })
+                    ->when($proofStatus === 'uploaded', function ($query) {
+                        $query->whereNotNull('payment_receipt')
+                            ->where('payment_receipt', '!=', '');
+                    })
+                    ->when($proofStatus === 'not_uploaded', function ($query) {
+                        $query->where(function ($query) {
+                            $query->whereNull('payment_receipt')
+                                ->orWhere('payment_receipt', '');
+                        });
                     })
                     ->whereIn('status', ['approved', 'completed']);
                     
@@ -208,6 +239,16 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 ->when($chargingStatus, function ($query) use ($chargingStatus) {
                     $query->where('status', $chargingStatus);
                 })
+                ->when($proofStatus === 'uploaded', function ($query) {
+                    $query->whereNotNull('payment_receipt')
+                        ->where('payment_receipt', '!=', '');
+                })
+                ->when($proofStatus === 'not_uploaded', function ($query) {
+                    $query->where(function ($query) {
+                        $query->whereNull('payment_receipt')
+                            ->orWhere('payment_receipt', '');
+                    });
+                })
                 ->latest();
                 
             $chargingRequests = paginate_for_user($chargingRequestsQuery, 20);
@@ -263,6 +304,7 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             'startDate',
             'endDate',
             'chargingStatus',
+            'proofStatus',
             'incomeSummary'
         ));
     }

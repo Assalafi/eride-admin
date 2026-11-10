@@ -105,6 +105,15 @@
                     </div>
 
                     <div class="col-lg-2 col-md-4">
+                        <label class="form-label">Payment Receipt</label>
+                        <select class="form-select" name="proof_status">
+                            <option value="">All Receipts</option>
+                            <option value="uploaded" {{ $proofStatus == 'uploaded' ? 'selected' : '' }}>Uploaded</option>
+                            <option value="not_uploaded" {{ $proofStatus == 'not_uploaded' ? 'selected' : '' }}>Not Uploaded</option>
+                        </select>
+                    </div>
+
+                    <div class="col-lg-2 col-md-4">
                         <label class="form-label">Type</label>
                         <select class="form-select" name="type">
                             <option value="">All Types</option>
