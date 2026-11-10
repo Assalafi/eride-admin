@@ -294,7 +294,17 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             $amount = $request->amount;
         }
 
-        DB::transaction(function () use ($transaction, $amount) {
+        $alreadyProcessed = false;
+
+        DB::transaction(function () use (&$transaction, $amount, &$alreadyProcessed) {
+            // Lock the row before checking status so double-clicks or two
+            // admins cannot approve the same payment concurrently.
+            $transaction = Transaction::with('driver')->lockForUpdate()->findOrFail($transaction->id);
+            if ($transaction->status !== Transaction::STATUS_PENDING) {
+                $alreadyProcessed = true;
+                return;
+            }
+
             $transaction->update([
                 'status' => 'successful',
                 'approved_by' => auth()->id(),
@@ -307,17 +317,21 @@ $baseQuery = Transaction::with(['driver', 'approver'])
 
             // Record daily remittance in company account as income
             if ($transaction->type === Transaction::TYPE_DAILY_REMITTANCE) {
-                CompanyAccountTransaction::create([
-                    'branch_id' => $transaction->driver->branch_id,
-                    'type' => 'income',
-                    'amount' => $amount,
-                    'category' => $transaction->is_hire_purchase_payment ? 'hire_purchase_payment' : 'daily_remittance',
-                    'reference' => ($transaction->is_hire_purchase_payment ? 'HP-' : 'REMIT-') . $transaction->id,
-                    'description' => ($transaction->is_hire_purchase_payment ? 'Hire purchase payment' : 'Daily remittance') . 
-                        ' from ' . $transaction->driver->full_name . ' - Transaction #' . $transaction->id,
-                    'transaction_date' => $transaction->created_at->toDateString(),
-                    'recorded_by' => auth()->id(),
-                ]);
+                CompanyAccountTransaction::firstOrCreate(
+                    [
+                        'reference' => ($transaction->is_hire_purchase_payment ? 'HP-' : 'REMIT-') . $transaction->id,
+                    ],
+                    [
+                        'branch_id' => $transaction->driver->branch_id,
+                        'type' => 'income',
+                        'amount' => $amount,
+                        'category' => $transaction->is_hire_purchase_payment ? 'hire_purchase_payment' : 'daily_remittance',
+                        'description' => ($transaction->is_hire_purchase_payment ? 'Hire purchase payment' : 'Daily remittance') .
+                            ' from ' . $transaction->driver->full_name . ' - Transaction #' . $transaction->id,
+                        'transaction_date' => $transaction->created_at->toDateString(),
+                        'recorded_by' => auth()->id(),
+                    ],
+                );
                 
                 // If this is a hire purchase payment, update the hire purchase records
                 if ($transaction->is_hire_purchase_payment && $transaction->hire_purchase_contract_id) {
@@ -325,6 +339,10 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                 }
             }
         });
+
+        if ($alreadyProcessed) {
+            return back()->withErrors(['error' => 'This transaction has already been processed.']);
+        }
 
         return redirect()->route('admin.payments.index')
             ->with('success', 'Payment approved successfully!');
@@ -370,27 +388,21 @@ $baseQuery = Transaction::with(['driver', 'approver'])
             return back()->withErrors(['error' => 'Only rejected transactions can be restored.']);
         }
 
-        // Create a new identical transaction with all original data
-        $newTransaction = Transaction::create([
-            'driver_id' => $transaction->driver_id,
-            'type' => $transaction->type,
-            'amount' => $transaction->amount,
-            'reference' => 'RESTORED-' . $transaction->reference . '-' . time(),
-            'description' => 'Restored from rejected transaction #' . $transaction->id,
+        // Re-open the existing row instead of creating a second payment for
+        // the same remittance date. This keeps the original reference,
+        // remittance identity, audit trail and company-income relationship.
+        $transaction->update([
             'payment_proof' => null,
-            'paid_at' => $transaction->paid_at, // Copy original payment date
-            'status' => 'pending',
+            'paid_at' => null,
+            'status' => Transaction::STATUS_PENDING,
             'approved_by' => null,
             'processed_by' => null,
             'processed_at' => null,
+            'description' => 'Restored for review from rejected payment',
         ]);
 
-        // Update created_at to match original transaction
-        $newTransaction->created_at = $transaction->created_at;
-        $newTransaction->save();
-
         return redirect()->route('admin.payments.index')
-            ->with('success', 'Payment restored successfully! New transaction created with pending status.');
+            ->with('success', 'Payment restored successfully and returned to pending review.');
     }
 
     /**
@@ -438,10 +450,13 @@ $baseQuery = Transaction::with(['driver', 'approver'])
 
             foreach ($drivers as $driver) {
                 try {
+                    // Serialize manual generation with the scheduled command.
+                    Driver::whereKey($driver->id)->lockForUpdate()->firstOrFail();
+
                     // Check if remittance already exists for the selected date
                     $existingRemittance = Transaction::where('driver_id', $driver->id)
-                        ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
-                        ->whereDate('created_at', $date)
+                        ->forRemittanceDate($date)
+                        ->orderBy('id')
                         ->first();
 
                     // Debug logging to check what's happening
@@ -558,6 +573,8 @@ $baseQuery = Transaction::with(['driver', 'approver'])
                         $newTransaction->processed_by = auth()->id();
                         $newTransaction->is_hire_purchase_payment = $isHirePurchase;
                         $newTransaction->hire_purchase_contract_id = $hirePurchaseContractId;
+                        $newTransaction->remittance_date = $selectedDate->toDateString();
+                        $newTransaction->remittance_key = Transaction::remittanceKeyFor($driver->id, $selectedDate);
                         $newTransaction->created_at = $selectedDate;
                         $newTransaction->updated_at = $selectedDate;
                         $newTransaction->save();

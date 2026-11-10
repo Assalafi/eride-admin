@@ -990,7 +990,8 @@ class DriverApiController extends Controller
                 ], 422);
             }
 
-            $driver = Driver::where('user_id', $user->id)->first();
+            // Serialize legacy submissions with the scheduled/manual generator.
+            $driver = Driver::where('user_id', $user->id)->lockForUpdate()->first();
 
             if (!$driver) {
                 Log::warning('API: Driver not found for daily remittance', [
@@ -1001,6 +1002,33 @@ class DriverApiController extends Controller
                     'success' => false,
                     'message' => 'Driver profile not found',
                 ], 404);
+            }
+
+            // Old clients may omit transaction_id. If today's remittance has
+            // already been approved, make the retry idempotent instead of
+            // creating another successful payment for the same date.
+            if (!$request->transaction_id) {
+                $successfulToday = Transaction::where('driver_id', $driver->id)
+                    ->forRemittanceDate(now())
+                    ->where('status', Transaction::STATUS_SUCCESSFUL)
+                    ->orderBy('id')
+                    ->first();
+
+                if ($successfulToday) {
+                    DB::commit();
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Today\'s remittance has already been submitted.',
+                        'data' => [
+                            'id' => $successfulToday->id,
+                            'amount' => (float) $successfulToday->amount,
+                            'reference' => $successfulToday->reference,
+                            'status' => $successfulToday->status,
+                            'created_at' => $successfulToday->created_at->format('Y-m-d H:i:s'),
+                        ],
+                    ]);
+                }
             }
 
             // Upload payment proof
@@ -1032,12 +1060,14 @@ class DriverApiController extends Controller
                     ->where('driver_id', $driver->id)
                     ->where('type', 'daily_remittance')
                     ->whereNull('payment_proof')
+                    ->lockForUpdate()
                     ->firstOrFail();
                 
                 $updateData = [
                     'payment_proof' => $paymentProofPath,
                     'paid_at' => now(),
                     'description' => $request->notes ?? $transaction->description,
+                    'remittance_date' => $transaction->remittance_date ?? $transaction->created_at?->toDateString(),
                 ];
                 
                 // Only update amount if provided
@@ -1049,25 +1079,51 @@ class DriverApiController extends Controller
                 
                 $reference = $transaction->reference;
             } else {
-                // Create new transaction
-                $reference = 'DRP-' . strtoupper(uniqid());
-                
-                $createData = [
-                    'driver_id' => $driver->id,
-                    'type' => 'daily_remittance',
-                    'description' => $request->notes ?? 'Daily remittance payment',
-                    'reference' => $reference,
-                    'payment_proof' => $paymentProofPath,
-                    'paid_at' => now(),
-                    'status' => 'pending',
-                ];
-                
-                // Only add amount if provided
-                if ($request->has('amount')) {
-                    $createData['amount'] = $request->amount;
+                $today = now()->toDateString();
+                $transaction = Transaction::where('driver_id', $driver->id)
+                    ->forRemittanceDate($today)
+                    ->whereIn('status', [Transaction::STATUS_PENDING, 'rejected', 'submitted'])
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($transaction) {
+                    // Reuse the existing generated row for old-app retries.
+                    $transaction->update([
+                        'payment_proof' => $paymentProofPath,
+                        'paid_at' => now(),
+                        'status' => Transaction::STATUS_PENDING,
+                        'approved_by' => null,
+                        'processed_by' => null,
+                        'processed_at' => null,
+                        'description' => $request->notes ?? $transaction->description,
+                        'amount' => $request->has('amount') ? $request->amount : $transaction->amount,
+                        'remittance_date' => $transaction->remittance_date ?? $transaction->created_at?->toDateString(),
+                    ]);
+                    $reference = $transaction->reference;
+                } else {
+                    // Create a new transaction only when no remittance exists
+                    // for this driver/date.
+                    $reference = 'DRP-' . strtoupper(uniqid());
+
+                    $createData = [
+                        'driver_id' => $driver->id,
+                        'type' => 'daily_remittance',
+                        'description' => $request->notes ?? 'Daily remittance payment',
+                        'reference' => $reference,
+                        'payment_proof' => $paymentProofPath,
+                        'paid_at' => now(),
+                        'status' => 'pending',
+                        'remittance_date' => $today,
+                        'remittance_key' => Transaction::remittanceKeyFor($driver->id, $today),
+                    ];
+
+                    if ($request->has('amount')) {
+                        $createData['amount'] = $request->amount;
+                    }
+
+                    $transaction = Transaction::create($createData);
                 }
-                
-                $transaction = Transaction::create($createData);
             }
             
             DB::commit();

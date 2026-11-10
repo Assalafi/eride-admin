@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\HirePurchaseContract;
+use Carbon\Carbon;
 
 class Transaction extends Model
 {
@@ -45,6 +46,8 @@ class Transaction extends Model
         'processed_at',
         'is_hire_purchase_payment',
         'hire_purchase_contract_id',
+        'remittance_date',
+        'remittance_key',
     ];
 
     protected $casts = [
@@ -52,7 +55,32 @@ class Transaction extends Model
         'paid_at' => 'datetime',
         'processed_at' => 'datetime',
         'is_hire_purchase_payment' => 'boolean',
+        'remittance_date' => 'date',
     ];
+
+    /**
+     * Stable identity for one driver's daily remittance date.
+     */
+    public static function remittanceKeyFor(int $driverId, Carbon|string $date): string
+    {
+        return $driverId . ':daily_remittance:' . Carbon::parse($date)->toDateString();
+    }
+
+    /**
+     * Match both new identity dates and legacy rows created before the
+     * remittance_date column existed.
+     */
+    public function scopeForRemittanceDate($query, Carbon|string $date)
+    {
+        $date = Carbon::parse($date)->toDateString();
+
+        return $query
+            ->where('type', self::TYPE_DAILY_REMITTANCE)
+            ->where(function ($query) use ($date) {
+                $query->whereDate('remittance_date', $date)
+                    ->orWhereDate('created_at', $date);
+            });
+    }
 
     /**
      * Get the driver for this transaction

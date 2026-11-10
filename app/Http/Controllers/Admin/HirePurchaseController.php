@@ -522,8 +522,48 @@ class HirePurchaseController extends Controller
 
         DB::beginTransaction();
         try {
+            // Lock the contract so two admin actions cannot apply the same
+            // hire-purchase payment to its balance concurrently.
+            $hirePurchase = HirePurchaseContract::whereKey($hirePurchase->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // Use the same driver-level lock as scheduled/manual generation
+            // and both driver payment APIs.
+            Driver::whereKey($hirePurchase->driver_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($hirePurchase->status !== HirePurchaseContract::STATUS_ACTIVE) {
+                DB::rollBack();
+
+                return back()->with('error', 'Cannot record payment for inactive contract.');
+            }
+
             $amount = $request->amount;
             $paymentDate = Carbon::parse($request->payment_date);
+
+            // A driver has one daily remittance identity. Reuse the generated
+            // row when it exists instead of creating a second successful row.
+            $existingSuccessful = Transaction::where('driver_id', $hirePurchase->driver_id)
+                ->forRemittanceDate($paymentDate)
+                ->where('status', Transaction::STATUS_SUCCESSFUL)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingSuccessful) {
+                DB::rollBack();
+
+                return back()->with('error', 'A remittance payment is already recorded for this driver and date.');
+            }
+
+            $existingTransaction = Transaction::where('driver_id', $hirePurchase->driver_id)
+                ->forRemittanceDate($paymentDate)
+                ->whereIn('status', [Transaction::STATUS_PENDING, Transaction::STATUS_REJECTED, 'submitted'])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first();
 
             // Find the next pending payment
             $pendingPayment = $hirePurchase->payments()
@@ -544,20 +584,40 @@ class HirePurchaseController extends Controller
                 }
             }
 
-            // Create transaction record
-            $transaction = Transaction::create([
-                'driver_id' => $hirePurchase->driver_id,
-                'type' => Transaction::TYPE_DAILY_REMITTANCE,
-                'amount' => $amount,
-                'reference' => 'HP-' . strtoupper(uniqid()),
-                'description' => "Hire Purchase Payment - {$hirePurchase->contract_number}",
-                'status' => Transaction::STATUS_SUCCESSFUL,
-                'paid_at' => $paymentDate,
-                'processed_by' => $user->id,
-                'processed_at' => now(),
-                'is_hire_purchase_payment' => true,
-                'hire_purchase_contract_id' => $hirePurchase->id,
-            ]);
+            // Complete the generated row when present; otherwise create the
+            // one canonical row for this driver/date.
+            if ($existingTransaction) {
+                $transaction = $existingTransaction;
+                $transaction->update([
+                    'amount' => $amount,
+                    'description' => "Hire Purchase Payment - {$hirePurchase->contract_number}",
+                    'status' => Transaction::STATUS_SUCCESSFUL,
+                    'paid_at' => $paymentDate,
+                    'processed_by' => $user->id,
+                    'processed_at' => now(),
+                    'approved_by' => $user->id,
+                    'is_hire_purchase_payment' => true,
+                    'hire_purchase_contract_id' => $hirePurchase->id,
+                    'remittance_date' => $transaction->remittance_date ?? $transaction->created_at?->toDateString(),
+                ]);
+            } else {
+                $transaction = Transaction::create([
+                    'driver_id' => $hirePurchase->driver_id,
+                    'type' => Transaction::TYPE_DAILY_REMITTANCE,
+                    'amount' => $amount,
+                    'reference' => 'HP-' . strtoupper(uniqid()),
+                    'description' => "Hire Purchase Payment - {$hirePurchase->contract_number}",
+                    'status' => Transaction::STATUS_SUCCESSFUL,
+                    'paid_at' => $paymentDate,
+                    'processed_by' => $user->id,
+                    'processed_at' => now(),
+                    'approved_by' => $user->id,
+                    'is_hire_purchase_payment' => true,
+                    'hire_purchase_contract_id' => $hirePurchase->id,
+                    'remittance_date' => $paymentDate->toDateString(),
+                    'remittance_key' => Transaction::remittanceKeyFor($hirePurchase->driver_id, $paymentDate),
+                ]);
+            }
 
             // Update payment record if exists
             if ($pendingPayment) {

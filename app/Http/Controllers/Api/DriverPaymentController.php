@@ -50,6 +50,10 @@ class DriverPaymentController extends Controller
 
         try {
             $checkout = DB::transaction(function () use ($data, $driver, $amount, $amountMinor, $reference, $environment, &$minimumAmount) {
+                // Serialize checkout creation with remittance generation and
+                // other payment attempts for this driver.
+                Driver::whereKey($driver->id)->lockForUpdate()->firstOrFail();
+
                 $transaction = null;
                 $fundingRequest = null;
 
@@ -120,13 +124,74 @@ class DriverPaymentController extends Controller
                             ]);
                         }
                     } else {
-                        $transaction = $driver->transactions()->create([
-                            'type' => Transaction::TYPE_DAILY_REMITTANCE,
-                            'amount' => $amount,
-                            'reference' => $reference,
-                            'description' => $data['notes'] ?? 'Daily remittance payment via OPay',
-                            'status' => Transaction::STATUS_PENDING,
-                        ]);
+                        $today = now()->toDateString();
+                        $successfulToday = Transaction::where('driver_id', $driver->id)
+                            ->forRemittanceDate($today)
+                            ->where('status', Transaction::STATUS_SUCCESSFUL)
+                            ->orderBy('id')
+                            ->lockForUpdate()
+                            ->first();
+
+                        if ($successfulToday) {
+                            throw ValidationException::withMessages([
+                                'purpose' => 'Today\'s remittance has already been paid.',
+                            ]);
+                        }
+
+                        $transaction = Transaction::where('driver_id', $driver->id)
+                            ->forRemittanceDate($today)
+                            ->whereIn('status', [Transaction::STATUS_PENDING, 'submitted', Transaction::STATUS_REJECTED])
+                            ->orderBy('id')
+                            ->lockForUpdate()
+                            ->first();
+
+                        if ($transaction) {
+                            $minimumAmount = round((float) $transaction->amount, 2);
+
+                            if ($amount < $minimumAmount) {
+                                throw ValidationException::withMessages([
+                                    'amount' => 'The minimum payment for this remittance is ₦' . number_format($minimumAmount, 2) . '.',
+                                ]);
+                            }
+
+                            if ($transaction->status === Transaction::STATUS_REJECTED) {
+                                $transaction->update([
+                                    'payment_proof' => null,
+                                    'paid_at' => null,
+                                    'status' => Transaction::STATUS_PENDING,
+                                    'approved_by' => null,
+                                    'processed_by' => null,
+                                    'processed_at' => null,
+                                ]);
+                            }
+
+                            $activeGateway = PaymentGatewayTransaction::where('transaction_id', $transaction->id)
+                                ->where('environment', $environment)
+                                ->whereIn('status', ['INITIAL', 'PENDING'])
+                                ->where('created_at', '>=', now()->subMinutes(35))
+                                ->latest()
+                                ->first();
+
+                            if ($activeGateway?->checkout_url) {
+                                return ['gateway' => $activeGateway, 'reused' => true];
+                            }
+
+                            if ($activeGateway) {
+                                throw ValidationException::withMessages([
+                                    'purpose' => 'A checkout is already being created for this remittance. Please retry shortly.',
+                                ]);
+                            }
+                        } else {
+                            $transaction = $driver->transactions()->create([
+                                'type' => Transaction::TYPE_DAILY_REMITTANCE,
+                                'amount' => $amount,
+                                'reference' => $reference,
+                                'description' => $data['notes'] ?? 'Daily remittance payment via OPay',
+                                'status' => Transaction::STATUS_PENDING,
+                                'remittance_date' => $today,
+                                'remittance_key' => Transaction::remittanceKeyFor($driver->id, $today),
+                            ]);
+                        }
                     }
                 } else {
                     $fundingRequest = $driver->walletFundingRequests()->create([

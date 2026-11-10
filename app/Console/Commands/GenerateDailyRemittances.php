@@ -64,10 +64,15 @@ class GenerateDailyRemittances extends Command
 
             foreach ($drivers as $driver) {
                 try {
+                    // Serialize all generators for this driver. The manual
+                    // admin generator uses the same lock, preventing a cron
+                    // run and a manual run from creating two rows together.
+                    Driver::whereKey($driver->id)->lockForUpdate()->firstOrFail();
+
                     // Check if remittance already exists for this date
                     $existingRemittance = Transaction::where('driver_id', $driver->id)
-                        ->where('type', Transaction::TYPE_DAILY_REMITTANCE)
-                        ->whereDate('created_at', $date)
+                        ->forRemittanceDate($date)
+                        ->orderBy('id')
                         ->first();
 
                     if ($existingRemittance) {
@@ -105,6 +110,8 @@ class GenerateDailyRemittances extends Command
                     $transaction->status = Transaction::STATUS_PENDING;
                     $transaction->is_hire_purchase_payment = $isHirePurchase;
                     $transaction->hire_purchase_contract_id = $hirePurchaseContractId;
+                    $transaction->remittance_date = $selectedDate->toDateString();
+                    $transaction->remittance_key = Transaction::remittanceKeyFor($driver->id, $selectedDate);
                     $transaction->timestamps = false;
                     $transaction->created_at = $selectedDate->copy()->setTime(11, 0, 0);
                     $transaction->updated_at = $selectedDate->copy()->setTime(11, 0, 0);
